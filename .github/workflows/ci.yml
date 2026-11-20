@@ -37,6 +37,101 @@ jobs:
       - name: Tests (debug, with runtime checks)
         run: nimble test -y --mm:${{ matrix.mm }} --threads:${{ matrix.threads }}
 
+  platforms:
+    # macOS and Windows (Q2). No nimlang/nim image there, and no third-party
+    # actions: Nim comes from the official downloads at nim-lang.org.
+    name: test (${{ matrix.os }}, nim 2.2.4, ${{ matrix.mm }}, threads=${{ matrix.threads }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        mm: [orc, arc]
+        threads: ['on', 'off']
+    env:
+      NIM_VERSION: '2.2.4'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the Nim toolchain
+        id: cache-nim
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nim-${{ env.NIM_VERSION }}
+          key: nim-${{ env.NIM_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install Nim (macOS, built from the release tarball)
+        if: runner.os == 'macOS' && steps.cache-nim.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL -o nim.tar.xz "https://nim-lang.org/download/nim-$NIM_VERSION.tar.xz"
+          tar -xJf nim.tar.xz
+          cd "nim-$NIM_VERSION"
+          sh build.sh
+          bin/nim c --hints:off -d:release koch
+          ./koch boot -d:release --hints:off
+          ./koch tools --hints:off
+
+      - name: Install Nim (Windows, official binaries)
+        if: runner.os == 'Windows' && steps.cache-nim.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://nim-lang.org/download/nim-$env:NIM_VERSION`_x64.zip" -OutFile nim.zip
+          Expand-Archive nim.zip -DestinationPath .
+
+      - name: Put Nim on the PATH
+        shell: bash
+        run: echo "$RUNNER_TEMP/nim-$NIM_VERSION/bin" >> "$GITHUB_PATH"
+
+      - name: Toolchain versions
+        shell: bash
+        run: |
+          nim --version
+          nimble --version
+          gcc --version || clang --version
+
+      - name: Tests (release)
+        shell: bash
+        run: nimble test -y --mm:${{ matrix.mm }} --threads:${{ matrix.threads }} -d:release
+
+      - name: Tests (debug, with runtime checks)
+        shell: bash
+        run: nimble test -y --mm:${{ matrix.mm }} --threads:${{ matrix.threads }}
+
+  devel:
+    # Nim devel is an allowed failure (Q2): it warns early about compiler
+    # changes without blocking a merge.
+    name: test (nim devel, ${{ matrix.mm }}, allowed to fail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        mm: [orc, arc]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Nim devel
+        working-directory: ${{ runner.temp }}
+        run: |
+          git clone --depth 1 https://github.com/nim-lang/Nim.git nim-devel
+          cd nim-devel
+          sh build_all.sh
+          test -x bin/nimble || ./koch tools --hints:off
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Toolchain versions
+        run: nim --version && nimble --version
+
+      - name: Tests (release)
+        run: nimble test -y --mm:${{ matrix.mm }} -d:release
+
+      - name: Tests (debug, with runtime checks)
+        run: nimble test -y --mm:${{ matrix.mm }}
+
   sanitizers:
     # One job per suite: a failure names the suite, and the jobs run in parallel.
     name: sanitizers (${{ matrix.mm }}, ${{ matrix.suite }})
