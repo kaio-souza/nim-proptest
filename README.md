@@ -226,7 +226,7 @@ forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 | Integrated shrinking, multiple distinct failures, flaky detection | ✅ |
 | `check`/`require` rewriting, `assume`, settings, environment variables | ✅ |
 | `std/unittest` integration; standalone use | ✅ |
-| Seed replay and crash breadcrumbs | ✅ (verified on Linux; macOS, Windows and JS pending in CI) |
+| Seed replay and crash breadcrumbs | ✅ (Linux, macOS and Windows in CI; JS pending) |
 | Stateful / model-based testing: `stateMachine`, shortest failing sequence printed as `replayCommands` code | ✅ |
 | Generators derived for objects, case objects, `distinct`, `ref` and recursive types; `Table`, `HashSet`; `frequency`, `recursive`; Unicode strings | ✅ |
 | Failure database (past failures replayed first), explicit `example(...)` | ✅ |

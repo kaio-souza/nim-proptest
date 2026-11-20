@@ -43,6 +43,12 @@ shrink and detection baselines).
   tree. The failure database key, too, is now computed from the code as
   written instead of the rewritten body, whose generated names changed with
   unrelated code.
+- A memory leak when generating `Table` and `OrderedTable` under ARC/ORC
+  when a later draw raised (a Nim 2.2.4 ARC bug; found by LeakSanitizer).
+
+#### Changed
+- CI also runs the full test suite on macOS and Windows, and on Nim devel
+  as an allowed failure (Q2).
 
 #### Generation changes
 - Boundary hints no longer include the internal slot numbers (2, 3, ...)

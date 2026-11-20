@@ -8,11 +8,11 @@ Work is planned by **theme and priority, not by version**. Most themes take a da
 
 ## Where we are
 
-**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. The bug-finding work is green on GitHub CI; derived generators and the failure database are checked locally on the full matrix. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 81 done or partial, all with evidence).
+**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 82 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
-| Tests | 138, all passing on orc/arc × threads on/off × debug/release |
+| Tests | 138, all passing on orc/arc × threads on/off × debug/release, on Linux, macOS and Windows |
 | Sanitizers | ASan, UBSan and leak checks clean on orc and arc |
 | Golden tests | PRNG and hash match the authors' reference C code and the official FNV-1a vectors; generated values pinned for seed 42 |
 | Value tests | the reference bugs of SPEC Part IV shrink to their exact minima, including the stateful queue (4 steps, 20/20 seeds); multiple bugs and no slippage verified on 20 seeds each (100/100 on 100 seeds) |
@@ -36,7 +36,7 @@ What keeps a new user from adopting the library, most blocking first.
 
 ### 1. Their platform and test runner
 
-- [ ] CI on macOS and Windows; Nim devel as an allowed failure (Q2)
+- [x] CI on macOS and Windows; Nim devel as an allowed failure (Q2). Nim comes from the official downloads, no third-party actions. It found a test helper that used POSIX shell syntax, and the first CI run of the derived generators under the sanitizers found a leak with tables (a Nim 2.2.4 ARC bug, fixed with named locals)
 - [ ] `unittest2` adapter (I2)
 - [ ] JSON report for CI tools, `PROPTEST_REPORT` (O3, K2)
 

@@ -65,7 +65,7 @@ Rules of the check:
 | I3 | Standalone use | done | t_engine | n/a | `forAllResult`, `runProperty`, `PropertyError` |
 | I4 | Async properties | deferred | | | |
 | F1 | Fuzzing bridge | deferred | | | |
-| RL1 | Own versioned PRNG | partial | t_prng | n/a | matches the reference C code on Linux; other OSes and JS pending in CI |
+| RL1 | Own versioned PRNG | partial | t_prng | n/a | matches the reference C code on Linux, macOS and Windows (CI); JS pending |
 | RL2 | Stable hashing | done | t_prng | n/a | FNV-1a official vectors |
 | RL3 | Flaky detection | done | t_values | n/a | double re-run |
 | RL4 | Failure identity during shrinking | done | t_engine, t_values | n/a | 20 seeds |
@@ -91,7 +91,7 @@ Rules of the check:
 | PF9 | Compile-time benchmark | done | bench | b_compile | 50 properties over derived types: same compile time as over `int` (~3.5 s) |
 | PF10 | Lazy formatting | done | t_find | n/a | inputs formatted only for the final report; static labels do not allocate per case |
 | Q1 | orc/arc × threads, no warnings | done | CI | n/a | also release/debug |
-| Q2 | macOS, Windows, devel | pending | | | platform and runner |
+| Q2 | macOS, Windows, devel | done | CI | n/a | full test suite on Linux, macOS and Windows (orc/arc × threads, release/debug); Nim devel as an allowed failure |
 | Q3 | JS backend | deferred | | | |
 | Q4 | Public API documented | partial | CI | n/a | `##` on the public API, `nim doc` built in CI |
 | Q5 | Dogfooding | done | t_prng, t_choices, t_shrink, t_values | n/a | |
