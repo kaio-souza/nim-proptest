@@ -8,7 +8,7 @@ Work is planned by **theme and priority, not by version**. Most themes take a da
 
 ## Where we are
 
-**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 86 done or partial, all with evidence).
+**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (96 requirements, 87 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
@@ -47,7 +47,7 @@ What keeps a new user from adopting the library, most blocking first.
 
 Learned while writing them: in `-d:release`, failures other than `check` lose their line (no stack trace), so two bugs of the same exception type are reported as one, and `--stackTrace:on` alone is not enough (it needs `--lineTrace:on`). And a property that discards every case never grows its sizes, so an `assume` on the length of a collection gives up with 0 passing cases.
 
-- [ ] Compile-time warning when failures cannot be located: built without `stackTrace` and `lineTrace` (`-d:release`, `-d:danger`), failures other than `check` are told apart by exception type only, so two bugs of the same type are reported as one. Like the `--panics:on` warning (A7): say so at compile time and suggest `--stackTrace:on --lineTrace:on`. No generated value changes.
+- [x] Compile-time warning when failures cannot be located (A8): built without `stackTrace` and `lineTrace` (`-d:release`, `-d:danger`), failures other than `check` are told apart by exception type only, so two bugs of the same type are reported as one. Like the `--panics:on` warning (A7), it says so at compile time and suggests `--stackTrace:on --lineTrace:on`; `-d:proptestTraceWarning=false` silences it (the library's own suite does, since its failures go through `check`). No generated value changes.
 
 ### 3. Trust over time
 

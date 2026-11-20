@@ -238,7 +238,13 @@ Settings with no variable (`maxSize`, `edgeBias`, ...) change what a property te
 | `-d:release --stackTrace:on --lineTrace:on` | located | located | on |
 | `-d:danger` | located | type only | **off** |
 
-Without locations, two different bugs that raise the same exception type look like one, and the report says "Location unknown (no stack trace)". Prefer debug builds for property tests, or add `--stackTrace:on --lineTrace:on` to a release build (both: the stack trace alone has no line numbers). Avoid `-d:danger`: with checks off, an out-of-bounds index is undefined behavior instead of a failure the library can catch and shrink.
+Without locations, two different bugs that raise the same exception type look like one, and the report says "Location unknown (no stack trace)". Prefer debug builds for property tests, or add `--stackTrace:on --lineTrace:on` to a release build (both: the stack trace alone has no line numbers). The library warns at compile time when either is missing:
+
+```
+Warning: proptest: built without stack traces (-d:release and -d:danger turn them off). Failures other than `check` are then told apart by exception type only: two bugs that raise the same type are reported as one. Build tests with --stackTrace:on --lineTrace:on, or silence this with -d:proptestTraceWarning=false.
+```
+
+**`-d:proptestTraceWarning=false`.** Silences that warning, for a suite that builds in release on purpose and whose properties fail through `check` (located in every build). Avoid `-d:danger`: with checks off, an out-of-bounds index is undefined behavior instead of a failure the library can catch and shrink.
 
 **`--panics:on`.** Defects (`IndexDefect`, `AssertionDefect`, ...) end the process at once, so the failing case cannot be shrunk. The library warns at compile time. Build tests with the default `--panics:off`; if you must keep it on, the run seed is already in `.proptest/last-run` to replay the crash.
 

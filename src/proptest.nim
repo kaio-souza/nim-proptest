@@ -30,6 +30,25 @@ when compileOption("panics"):
     "first failing case, so it cannot be shrunk. Replay it with the seed saved in " &
     ".proptest/last-run, or build the tests with --panics:off.".}
 
+const proptestTraceWarning {.booldefine.} = true
+  ## `-d:proptestTraceWarning=false` silences the warning below (A8).
+
+when proptestTraceWarning:
+  # A8: failures are told apart by exception type and line (RL4). Without
+  # stack traces the line of a `raise` or `doAssert` is unknown, so two bugs
+  # of the same exception type are reported as one. `check` keeps its line.
+  when not compileOption("stackTrace"):
+    {.warning: "proptest: built without stack traces (-d:release and -d:danger " &
+      "turn them off). Failures other than `check` are then told apart by " &
+      "exception type only: two bugs that raise the same type are reported as " &
+      "one. Build tests with --stackTrace:on --lineTrace:on, or silence this " &
+      "with -d:proptestTraceWarning=false.".}
+  elif not compileOption("lineTrace"):
+    {.warning: "proptest: built with --stackTrace:on but without --lineTrace:on. " &
+      "Failures other than `check` are then located by file only (line 0): two " &
+      "bugs in the same file that raise the same type are reported as one. Add " &
+      "--lineTrace:on, or silence this with -d:proptestTraceWarning=false.".}
+
 type
   PropertyError* = object of CatchableError
     ## Raised by `forAll` outside a unittest `test` when the property fails.

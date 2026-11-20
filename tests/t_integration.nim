@@ -24,6 +24,23 @@ suite "integration":
     check ok
     check "proptest: compiled with --panics:on" in buildLog
 
+  test "A8: a build that cannot locate failures is reported at compile time":
+    # tests/config.nims silences the warning for the suite; the command line
+    # turns it back on here.
+    proc warnings(flags: string): string =
+      let (log, ok) = compileFixture("f_seed", "-d:proptestTraceWarning=true " & flags &
+        " -o:" & quoteShell(fixturesDir / "f_seed_trace"))
+      check ok
+      log
+    check "proptest: built" notin warnings("")
+    let release = warnings("-d:release")
+    check "proptest: built without stack traces" in release
+    check "--stackTrace:on --lineTrace:on" in release
+    check "proptest: built with --stackTrace:on but without --lineTrace:on" in
+      warnings("-d:release --stackTrace:on")
+    check "proptest: built" notin warnings("-d:release --stackTrace:on --lineTrace:on")
+    check "proptest: built" notin warnings("-d:release -d:proptestTraceWarning=false")
+
   test "R1/R2: PROPTEST_SEED replays a run exactly":
     check compileFixture("f_seed").ok
     let env = {"PROPTEST_SEED": "12345", "PROPTEST_DB": "off"}

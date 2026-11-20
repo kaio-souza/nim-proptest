@@ -17,6 +17,10 @@ version: a release is cut when it is worth one, not per theme.
 - Troubleshooting guide (`docs/TROUBLESHOOTING.md`): from the message you
   see (gave up, flaky, warnings, a seed that does not replay, compile
   errors) to its cause and fix, with real reports.
+- A compile-time warning when a build cannot locate failures (A8): without
+  stack and line traces (`-d:release`, `-d:danger`), failures other than
+  `check` are told apart by exception type only, so two bugs of the same
+  type are reported as one. `-d:proptestTraceWarning=false` silences it.
 - `scripts/check_docs.nim`, run by `nimble trace` in CI: fails when a
   setting, environment variable or define is missing from the reference, or
   when a link points to a heading that does not exist.

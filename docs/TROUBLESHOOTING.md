@@ -190,7 +190,7 @@ Property 'two bugs' falsified at case 8 (53 cases passed, 0 discarded).
 
 **Why.** Two failures are the same bug when they have the same exception type and are raised at the same line of your code. The line comes from the stack trace, which `-d:release` turns off. `check` failures keep their line in every build, because the line is recorded where `check` is written.
 
-**What to do.** Run property tests in debug builds, or add `--stackTrace:on --lineTrace:on` to the release build ([table](CONFIGURATION.md#compile-time-options)). The opposite case, one bug reported as several, happens when the same bug raises at different lines depending on the input; the counterexamples then look alike, and fixing one fixes the others.
+**What to do.** Run property tests in debug builds, or add `--stackTrace:on --lineTrace:on` to the release build ([table](CONFIGURATION.md#compile-time-options)). Such a build is announced at compile time by the warning "proptest: built without stack traces". The opposite case, one bug reported as several, happens when the same bug raises at different lines depending on the input; the counterexamples then look alike, and fixing one fixes the others.
 
 ### The counterexample is not as small as it could be
 
@@ -363,3 +363,4 @@ replayCommands: precondition of step 3 (pop()) is false, so this sequence cannot
 | `example(...) needs one value per variable (N)` | an example with too few or too many values | one value per `name in source`, in order |
 | `classify is only valid inside forAll or a stateMachine` | `classify`, `cover` or `label` outside a property | move it into the body |
 | Warning `proptest: compiled with --panics:on` | see [above](#the-process-ends-with-no-report) | build tests with `--panics:off` |
+| Warning `proptest: built without stack traces`, or `... without --lineTrace:on` | a release build: see [above](#two-bugs-reported-as-one-or-location-unknown) | `--stackTrace:on --lineTrace:on`, or `-d:proptestTraceWarning=false` if your properties fail through `check` |

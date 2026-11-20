@@ -100,6 +100,7 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 | A5 | P1 | Values are printed with `$` when available, falling back to a structural representation. |
 | A6 | P0 | **Assertions inside `forAll`**: `check` and `require` from `std/unittest`/`unittest2` do not raise on failure; inside a `forAll` body they are rewritten so a failure aborts the current case silently and is seen by the engine. The host runner is told about the failure once, with the final report ([ADR-0009](decisions/0009-assertions-inside-forall.md)). |
 | A7 | P1 | **`--panics:on`**: `Defect`s cannot be caught in this mode, so the process stops at the first failing case. This is detected at compile time, documented, and the crash breadcrumbs (RL9) allow replay; shrinking requires `--panics:off`. |
+| A8 | P1 | **Builds that cannot locate failures**: without stack and line traces (`-d:release`, `-d:danger`) failures other than `check` are told apart by exception type only (RL4), so two bugs of the same type look like one. This is detected at compile time with a warning that names the fix; `-d:proptestTraceWarning=false` silences it. |
 
 ## 10. Stateful / model-based testing (M)
 

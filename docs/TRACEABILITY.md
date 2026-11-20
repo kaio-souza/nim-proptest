@@ -43,6 +43,7 @@ Rules of the check:
 | A5 | Value printing | done | t_engine | n/a | |
 | A6 | `check`/`require` inside `forAll` | done | t_engine, t_integration | n/a | ADR-0009 |
 | A7 | `--panics:on` | done | t_integration | n/a | compile-time warning |
+| A8 | Builds that cannot locate failures | done | t_integration | n/a | compile-time warning; `-d:proptestTraceWarning=false` |
 | M1 | Model, system, commands | done | t_stateful | n/a | `stateMachine` macro; malformed machines rejected at compile time |
 | M2 | Random command sequences | done | t_stateful, t_find | b_gen, b_find | commands drawn among the enabled ones; arguments may read the model; swarm testing; 0 allocations per sequence |
 | M3 | Sequence shrinking | done | t_stateful, t_choices | b_shrink | steps are spans deleted whole (ADR-0011); value test on 20 seeds |
