@@ -2,7 +2,7 @@
 
 A **property-based testing library for the [Nim](https://nim-lang.org) programming language**, distributed as a Nimble package. State a rule, let the library generate the inputs, and get the **smallest** input that breaks it.
 
-> **Status: v0.4, usable, not yet in the Nimble index.** Properties over built-in types and **your own objects with no generator code**, and stateful (model-based) tests, work today, with automatic shrinking, failures that are replayed first on the next run, coverage statistics and boundary-seeking exploration. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
+> **Status: usable, not yet in the Nimble index.** Properties over built-in types and **your own objects with no generator code**, and stateful (model-based) tests, work today, with automatic shrinking, failures that are replayed first on the next run, coverage statistics and boundary-seeking exploration. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
 
 ## Installation
 
@@ -233,7 +233,7 @@ forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 | `classify` / `cover` / `label`, stateful statistics, verbosity levels | ✅ |
 | Edge-case bias, boundary hints (`near`, mined constants), swarm testing | ✅ |
 | Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
-| macOS and Windows CI, `unittest2` adapter, JSON report, stability policy | v0.5 |
+| macOS and Windows CI, `unittest2` adapter, JSON report, stability policy | next ([roadmap](docs/ROADMAP.md)) |
 
 ## Known limitations
 

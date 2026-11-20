@@ -6,7 +6,7 @@ description   = "Property-based testing for Nim: generators from types, integrat
 license       = "MIT"
 srcDir        = "src"
 skipDirs      = @["tests", "benchmarks", "examples", "docs", "scripts"]
-# 0.4.0 is unreleased: see CHANGELOG.md and docs/ROADMAP.md.
+# The next release number; nothing after v0.2.0 is tagged yet (CHANGELOG.md, Unreleased).
 
 # Dependencies (ADR-0002: standard library only)
 

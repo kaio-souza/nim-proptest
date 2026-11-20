@@ -1,6 +1,6 @@
 # Traceability matrix
 
-Status of every requirement in [`SPEC.md`](SPEC.md), checked by `scripts/check_traceability.nim` (`nimble trace`, CI job). Per-version view: [`ROADMAP.md`](ROADMAP.md).
+Status of every requirement in [`SPEC.md`](SPEC.md), checked by `scripts/check_traceability.nim` (`nimble trace`, CI job). Per-theme view: [`ROADMAP.md`](ROADMAP.md).
 
 Rules of the check:
 - **done** and **partial** need a test whose name cites the ID (`test "S1: ..."`, value tests as `V-S1`), unless the Tests column says `CI` (the CI matrix is the evidence), `bench` (a benchmark gate) or `doc` (documentation).
@@ -23,8 +23,8 @@ Rules of the check:
 | C2 | `oneOf`, `elements`, `constant` | done | t_gen | n/a | |
 | C3 | `frequency` | done | t_derive | n/a | |
 | C4 | `recursive` | done | t_derive | n/a | |
-| C5 | `sized`, `resize` | pending | | | v0.6 |
-| C6 | `unique`, `sortedSeq` | pending | | | v0.6 |
+| C5 | `sized`, `resize` | pending | | | generation changes |
+| C6 | `unique`, `sortedSeq` | pending | | | generation changes |
 | C7 | Custom generators as procs | done | t_gen | n/a | `newGen`, `arbitrary` overloads |
 | S1 | Integrated shrinking | done | t_choices, t_shrink, t_values | b_shrink | |
 | S2 | Shrunk values satisfy the generator | done | t_values | n/a | |
@@ -55,13 +55,13 @@ Rules of the check:
 | D3 | Size statistics | deferred | | | |
 | O1 | Quiet exploration | done | t_integration | n/a | |
 | O2 | Verbosity levels | done | t_find | n/a | `verbosity`, `PROPTEST_VERBOSITY` |
-| O3 | JSON report | pending | | | v0.5 |
+| O3 | JSON report | pending | | | platform and runner |
 | O4 | Statistics and warnings in the report | done | t_find | n/a | labels, stateful commands and lengths, health-check warnings |
 | K1 | Per-property settings | done | t_engine | n/a | |
-| K2 | Environment defaults | partial | t_integration, t_find | n/a | `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`, `PROPTEST_DB`, `PROPTEST_DEADLINE`, `PROPTEST_TIME_BUDGET`, `PROPTEST_VERBOSITY`; `PROPTEST_REPORT` in v0.5 |
+| K2 | Environment defaults | partial | t_integration, t_find | n/a | `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`, `PROPTEST_DB`, `PROPTEST_DEADLINE`, `PROPTEST_TIME_BUDGET`, `PROPTEST_VERBOSITY`; `PROPTEST_REPORT` pending |
 | K3 | Settings validation | done | t_engine | n/a | |
 | I1 | `std/unittest` integration | done | t_integration | n/a | |
-| I2 | `unittest2` adapter | pending | | | v0.5 |
+| I2 | `unittest2` adapter | pending | | | platform and runner |
 | I3 | Standalone use | done | t_engine | n/a | `forAllResult`, `runProperty`, `PropertyError` |
 | I4 | Async properties | deferred | | | |
 | F1 | Fuzzing bridge | deferred | | | |
@@ -79,7 +79,7 @@ Rules of the check:
 | RL12 | Failure database robustness | done | t_database | n/a | versioned format, atomic writes, entries that no longer fit dropped |
 | RL13 | Isolation in stateful tests | done | t_stateful | n/a | fresh model and setup per sequence; teardown after failures |
 | RL14 | Shrinker invariants | done | t_shrink | n/a | |
-| RL15 | Stability policy | partial | t_gen | n/a | golden snapshot; written policy in v0.5 |
+| RL15 | Stability policy | partial | t_gen | n/a | golden snapshot; written policy pending |
 | PF1 | Benchmark suite with baseline | done | bench | b_gen, b_shrink | |
 | PF2 | Fast default run, debug and release | done | bench | b_gen | 100 cases: 0.16 ms (`int`) and 1.5 ms (`seq[int]`) in debug; ROADMAP has the table |
 | PF3 | Parallel cases | deferred | | | |
@@ -91,7 +91,7 @@ Rules of the check:
 | PF9 | Compile-time benchmark | done | bench | b_compile | 50 properties over derived types: same compile time as over `int` (~3.5 s) |
 | PF10 | Lazy formatting | done | t_find | n/a | inputs formatted only for the final report; static labels do not allocate per case |
 | Q1 | orc/arc × threads, no warnings | done | CI | n/a | also release/debug |
-| Q2 | macOS, Windows, devel | pending | | | v0.5 |
+| Q2 | macOS, Windows, devel | pending | | | platform and runner |
 | Q3 | JS backend | deferred | | | |
 | Q4 | Public API documented | partial | CI | n/a | `##` on the public API, `nim doc` built in CI |
 | Q5 | Dogfooding | done | t_prng, t_choices, t_shrink, t_values | n/a | |
@@ -102,6 +102,6 @@ Rules of the check:
 | DOC2 | Writing generators guide | done | doc | n/a | [`GENERATORS.md`](GENERATORS.md); its example `examples/generators.nim` runs in CI |
 | DOC3 | Property patterns cookbook | done | doc | n/a | [`PATTERNS.md`](PATTERNS.md); its example `examples/patterns.nim` runs in CI |
 | DOC4 | Stateful testing tutorial | done | doc | n/a | [`STATEFUL.md`](STATEFUL.md); its example `examples/stateful.nim` runs in CI |
-| DOC5 | Configuration reference | pending | | | v0.5 |
-| DOC6 | Troubleshooting | pending | | | v0.5 |
+| DOC5 | Configuration reference | pending | | | learning it alone |
+| DOC6 | Troubleshooting | pending | | | learning it alone |
 | DOC7 | CHANGELOG | done | doc | n/a | |

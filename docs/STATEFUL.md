@@ -189,7 +189,7 @@ Three steps are enough to see which rule is off. Decide which side matches the s
 - **Expected errors are values.** If the system raises on a rejected call, catch it inside `run:` and return something the model predicts (`"rejected"`). Any exception that escapes `run:` is a failure.
 - **A real example**: [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) tests its breaker this way (`tests/t_model.nim`), with backoff, `successThreshold` and its `FakeClock`, over 1000 sequences.
 
-## Limits (v0.3)
+## Limits
 
 - States that need a long, specific path (five reopenings of a breaker in a row, each after the right wait) are still rarely reached by random sequences. Write that path as a `replayCommands` regression test, or narrow the commands of a dedicated machine.
 - Commands run one after another on one thread. Parallel linearizability checks are planned after 1.0 (M7).
