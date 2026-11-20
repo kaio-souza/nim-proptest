@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (nim ${{ matrix.nim }}, ${{ matrix.mm }}, threads=${{ matrix.threads }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Official Nim image pinned by version: no third-party actions.
+    container: nimlang/nim:${{ matrix.nim }}
+    strategy:
+      fail-fast: false
+      matrix:
+        nim: ['2.2.4']
+        mm: [orc, arc]
+        threads: ['on', 'off']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Allow git in the container workspace (nimble reads the revision)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Tests (release)
+        run: nimble test -y --mm:${{ matrix.mm }} --threads:${{ matrix.threads }} -d:release
+
+      - name: Tests (debug, with runtime checks)
+        run: nimble test -y --mm:${{ matrix.mm }} --threads:${{ matrix.threads }}
+
+  sanitizers:
+    name: sanitizers (ASan + UBSan + leaks, ${{ matrix.mm }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: nimlang/nim:2.2.4
+    strategy:
+      fail-fast: false
+      matrix:
+        mm: [orc, arc]
+    env:
+      ASAN_OPTIONS: detect_leaks=1
+      UBSAN_OPTIONS: print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test suites under sanitizers (Q6)
+        shell: bash
+        run: |
+          set -e
+          for t in t_prng t_choices t_gen t_shrink t_engine t_values; do
+            nim c -r --hints:off --mm:${{ matrix.mm }} -d:useMalloc --debugger:native \
+              --passC:-fsanitize=address,undefined --passC:-fno-sanitize-recover=undefined \
+              --passC:-fno-omit-frame-pointer --passL:-fsanitize=address,undefined \
+              -o:/tmp/$t tests/$t.nim
+          done
+
+  quality:
+    name: examples, docs, traceability, performance gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: nimlang/nim:2.2.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Allow git in the container workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build and run the examples (Q8, DOC1)
+        shell: bash
+        run: |
+          nim c --hints:off -o:/tmp/tour examples/tour.nim
+          PROPTEST_DB=off /tmp/tour
+          # quickstart has planted bugs: it must report them and fail.
+          nim c --hints:off -o:/tmp/quickstart examples/quickstart.nim
+          if PROPTEST_DB=off /tmp/quickstart; then
+            echo "quickstart was expected to report its planted bugs"; exit 1
+          fi
+
+      - name: Generate API documentation (Q4)
+        run: nim doc --project --outdir:/tmp/htmldocs src/proptest.nim
+
+      - name: Traceability matrix (ADR-0004)
+        run: nimble trace
+
+      - name: Deterministic performance gates (PF7, ADR-0008)
+        run: nimble gate

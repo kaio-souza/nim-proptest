@@ -49,7 +49,7 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 |----|-----|-------------|
 | G1 | P0 | `Gen[T]` type: a value that produces `T` from a source of random choices. |
 | G2 | P0 | Built-in generators for `bool`, all integer and float types, `char`, `string`, `enum`, `range`, `seq[T]`, `array[N, T]`, `set[T]`, `tuple`, `Option[T]`. |
-| G3 | P0 | Generators **inferred from types**: `forAll(x: seq[int])` needs no explicit generator. |
+| G3 | P0 | Generators **inferred from types**: `forAll(xs in seq[int])` needs no explicit generator. |
 | G4 | P1 | Automatic generators for `object` types (including case objects) and `distinct` types, derived by a macro. |
 | G5 | P1 | `Table`, `OrderedTable`, `HashSet`, `ref` objects with a recursion depth limit. |
 | G6 | P1 | Strings by alphabet: ASCII, printable, alphanumeric, full Unicode (valid UTF-8), custom charset. |
@@ -93,7 +93,7 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 
 | ID | Pri | Requirement |
 |----|-----|-------------|
-| A1 | P0 | `forAll(a: T, b = gen, ...)`: body runs once per generated case; a raised exception or failed `check` is a failure. |
+| A1 | P0 | `forAll(a in T, b in gen, ...)`: each variable comes from a type or a `Gen[T]`; the body runs once per generated case; a raised exception or failed `check` is a failure. |
 | A2 | P0 | `assume(cond)` discards a case; a run fails with a clear message when too many cases are discarded. |
 | A3 | P0 | Failure report: property name, minimal counterexample with variable names, the original error and stack trace, number of cases run and shrink steps. |
 | A4 | P1 | `Defect`s count as failures (they are what PBT is meant to find), with an option to let them propagate. |
@@ -163,7 +163,7 @@ A testing library is only useful if its failures can be trusted: every reported 
 |----|-----|-------------|
 | RL1 | P0 | **Own, versioned PRNG**: the same seed produces the same choice stream on every Nim version, OS, 32/64-bit target and backend (C, C++, JS). `std/random` is never used for generation ([ADR-0005](decisions/0005-own-prng-and-stable-hashing.md)). |
 | RL2 | P0 | **Stable hashing** for seed derivation and failure database keys, implemented in the library; `std/hashes` is never used for anything persisted or printed. |
-| RL3 | P0 | **Flaky detection**: the final counterexample is re-run before being reported; if it passes, the property is reported as *flaky* with the observed outcomes, never as a normal failure ([ADR-0006](decisions/0006-failure-identity-and-flaky-detection.md)). |
+| RL3 | P0 | **Flaky detection**: the final counterexample is re-run twice before being reported; if either run passes, the property is reported as *flaky* with the observed outcomes, never as a normal failure ([ADR-0006](decisions/0006-failure-identity-and-flaky-detection.md)). |
 | RL4 | P0 | **Failure identity during shrinking**: a candidate only counts as "still failing" if it fails the same way (exception type and raise/check location). Shrinking never slips from one bug to another. |
 | RL5 | P1 | **Multiple distinct failures**: different failures found while generating or shrinking are each shrunk and reported (up to a configurable limit), instead of being merged or lost. |
 | RL6 | P0 | **Generator errors are not property failures**: an exception inside a generator, an exhausted `filter`, or an overrun is reported as a generator problem with its own message. |
@@ -187,14 +187,14 @@ Properties should be cheap enough to run on every save, next to unit tests. Init
 | PF2 | P1 | A default run (100 cases) of a simple property completes in milliseconds, **in debug builds**, which is how test suites usually run. Benchmarks are reported for debug and release. |
 | PF3 | P2 | Optional parallel execution of independent cases. |
 | PF4 | P0 | **No allocation per choice**: the choice buffer is preallocated and reused across cases and shrink attempts. |
-| PF5 | P1 | **Built-in generators without closures**: type-inferred generators (`forAll(x: seq[int])`) are expanded at compile time into direct calls; closures are used only for user-built combinators ([ADR-0007](decisions/0007-generator-representation.md)). |
+| PF5 | P1 | **Built-in generators without closures**: type-inferred generators (`forAll(xs in seq[int])`) are expanded at compile time into direct calls; closures are used only for user-built combinators ([ADR-0007](decisions/0007-generator-representation.md)). |
 | PF6 | P1 | **Efficient shrinking**: passes use binary/exponential search on values and span sizes instead of decrementing by one, and a cache of already tried sequences avoids re-running duplicates. |
 | PF7 | P0 | **Deterministic performance gates**: the number of property executions spent shrinking each reference bug and the allocations per case are deterministic and are gated in CI. Wall-clock timings are informational ([ADR-0008](decisions/0008-deterministic-performance-gates.md)). |
 | PF8 | P1 | **Time budget per property**: generation stops gracefully when the budget is reached, and the report says how many cases ran. |
 | PF9 | P1 | **Compile-time cost**: a benchmark measures the compile time of a test file with 50 properties and derived object generators, with a budget. |
 | PF10 | P1 | **Lazy formatting**: values are converted to strings only for the final report; `classify` with static labels does not allocate per case. |
 
-Initial targets (release / debug, to be confirmed by PF1): drawing one choice < 5 ns / < 20 ns; generating an `int` < 10 ns / < 40 ns; per-case overhead excluding the body < 200 ns / < 1 µs; each reference bug shrunk to its minimal counterexample in < 500 property executions.
+Initial targets (release / debug; measured values in [`ROADMAP.md`](ROADMAP.md#performance-against-the-initial-targets)): drawing one choice < 5 ns / < 20 ns; generating an `int` < 10 ns / < 40 ns; per-case overhead excluding the body < 200 ns / < 1 µs; each reference bug shrunk to its minimal counterexample in < 500 property executions.
 
 ## 17. Portability and quality (Q)
 
@@ -229,10 +229,10 @@ What should make this library the obvious choice in Nim:
 
 1. **Shrinking that just works.** Integrated shrinking over the choice sequence means custom generators built with `map`/`filter`/`flatMap` shrink for free. Users never write shrinkers (S1, ADR-0001).
 2. **Stateful testing from day one**, with shrunk command sequences printed as runnable Nim code (M1–M4). This is the hardest part of PBT to get right and the one that finds the most valuable bugs.
-3. **Types are the specification.** `forAll(x: MyObject)` works because generators are derived by macros at compile time (G3, G4).
+3. **Types are the specification.** `forAll(x in MyObject)` works because generators are derived by macros at compile time (G3, G4).
 4. **Failures that stay fixed.** Seed replay plus a failure database that re-runs past counterexamples first (R1–R3).
 5. **Coverage you can assert.** `cover` turns "the generator probably produces edge cases" into a checked requirement (D2).
-6. **Failures you can trust.** A reported counterexample is re-run before it is shown, fails the same way as the original bug, and replays identically on any Nim version, OS and backend. Flaky properties are called out as flaky (RL1–RL4).
+6. **Failures you can trust.** A reported counterexample is re-run twice before it is shown, fails the same way as the original bug, and replays identically on any Nim version, OS and backend. Flaky properties are called out as flaky (RL1–RL4).
 7. **Survives crashes and hangs.** The seed is on disk before the first case, and deadlines turn hangs into ordinary, shrinkable failures (RL8, RL9).
 8. **Fast enough for every save, with gates that do not flake.** No allocation per choice, closure-free built-in generators, and CI gates on deterministic metrics (executions and allocations) instead of noisy timings (PF4, PF5, PF7).
 9. **Proven, not promised.** Every requirement has a test; shrink quality is measured against reference bugs; performance claims point to benchmarks (Part IV).

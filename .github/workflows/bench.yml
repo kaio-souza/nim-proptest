@@ -1,0 +1,39 @@
+name: Benchmarks
+
+# Informational: publishes timings and never fails the build. The
+# deterministic gates (shrink executions, allocations) run in CI.
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: nimlang/nim:2.2.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Allow git in the container workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Run benchmarks and publish them in the job summary
+        shell: bash
+        run: |
+          nimble bench -y 2>&1 | tee /tmp/bench.txt
+          {
+            echo "## Benchmarks"
+            echo
+            echo "Commit: $GITHUB_SHA"
+            echo '```'
+            grep -vE '^(Hint|Warning|\s*$)' /tmp/bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

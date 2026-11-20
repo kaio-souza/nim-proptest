@@ -17,10 +17,10 @@ Use integrated shrinking over a recorded choice sequence.
 
 - `Gen[T]` is a proc that reads choices from a `ChoiceSource`. In normal runs the source draws from a seeded RNG and records each draw; during shrinking it replays a candidate sequence.
 - Built-in generators are written so that smaller choices produce simpler values (e.g. choice `0` is the integer `0`, a short sequence is a short list).
-- The shrinker works only on the sequence: delete spans, zero spans, lower individual choices, sort spans. It knows nothing about types.
+- The shrinker works only on the sequence: delete spans, zero spans, lower individual choices, merge spans. It knows nothing about types.
 - When a candidate sequence runs out, the source returns `0`, so generators always terminate.
 - Generation that exceeds the maximum sequence length (RL7) marks the case as an **overrun**: it is invalid, not a failure.
-- Shrink passes use binary/exponential search on values and span sizes, and remember sequences already tried (PF6). A candidate is accepted only if it is smaller in shortlex order and fails with the same signature (RL4, RL14, ADR-0006).
+- Shrink passes: delete chunks, zero chunks, lower each choice by binary search, and, when those stall, merge a deleted chunk's last choice into an earlier choice (so `[1, 1]` can become `[2]` when only a total matters). Sequences already tried are not executed again (PF6). A candidate is accepted only if it is smaller in shortlex order and fails with the same signature (RL4, RL14, ADR-0006).
 
 ## Consequences
 

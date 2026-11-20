@@ -2,11 +2,16 @@
 tests/*
 !tests/*.nim
 !tests/*.nims
+!tests/fixtures/
+tests/fixtures/*
+!tests/fixtures/*.nim
+!tests/fixtures/*.nims
 examples/*
 !examples/*.nim
 !examples/*.nims
 benchmarks/*
 !benchmarks/*.nim
+!benchmarks/baseline/
 
 # Compiler artifacts
 nimcache/

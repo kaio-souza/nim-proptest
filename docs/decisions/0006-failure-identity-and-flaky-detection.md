@@ -14,15 +14,15 @@ Two classic ways for a property-based testing tool to lie:
 ## Decision
 
 - **Failure identity**: every failure gets a signature: the exception type plus the location of the raise or the failed `check` (file and line from the stack trace). During shrinking a candidate is accepted only if its signature equals the one being shrunk.
-- **Multiple failures**: a candidate with a different signature is not discarded; it is kept as a new failure and shrunk separately, up to a configurable limit (default 3). The report lists each one.
-- **Flaky detection**: before reporting, the final counterexample is executed again. If it does not fail with the same signature, the property is reported as **flaky**, with the original error and the outcome of the re-run, and a hint about common causes.
+- **Multiple failures**: after the first failure, exploration continues for the remaining cases of the run and records every new signature; while shrinking, a candidate with a different signature is also kept. Each distinct failure is shrunk separately, up to a configurable limit (default 3), and the report lists each one. Relying on the shrink path alone made a second bug a matter of luck with the seed.
+- **Flaky detection**: before reporting, the final counterexample is executed twice more. If either run does not fail with the same signature, the property is reported as **flaky**, with the original error and the outcome of the re-run, and a hint about common causes.
 - **Generator errors** (exceptions in generators, exhausted filters, overruns) have their own category and never become property failures or signatures.
 
 ## Consequences
 
 - Reports are trustworthy: what is printed reproduces, and it is the bug that was found.
-- One extra execution per reported failure.
-- Signatures depend on stack traces; in builds without them (`--stackTrace:off`), the identity falls back to the exception type and message, and the report says identity is weaker.
+- Two extra executions per reported failure. A single re-run would miss properties that alternate between passing and failing.
+- Signatures depend on stack traces; in builds without them (`--stackTrace:off`), the identity falls back to the exception type alone (messages often contain the input, so they would split one bug into many), and the report says identity is weaker.
 
 ## Evidence
 

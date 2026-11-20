@@ -1,0 +1,9 @@
+{
+  "reverse drops last element": 113,
+  "filtered evens >= 100": 49,
+  "mapped labels of length 4": 17,
+  "int boundary 123456": 83,
+  "string containing z": 24,
+  "list sum >= 1500": 68,
+  "two independent bugs": 38
+}

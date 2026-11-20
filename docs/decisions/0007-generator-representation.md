@@ -12,7 +12,7 @@
 
 Use both, each where it fits:
 
-- **Built-in, type-inferred generators** (`forAll(x: seq[int])`, derived object generators) are expanded by the `forAll` macro into direct calls to inline procs over the choice source. No closure, no indirect call.
+- **Built-in, type-inferred generators** (`forAll(xs in seq[int])`, derived object generators) are expanded by the `forAll` macro into direct calls to inline procs over the choice source. No closure, no indirect call.
 - **User-built generators** (`ints(0, 10).map(...)`, `oneOf(...)`) are values of type `Gen[T]`, a small object wrapping a closure. They are built once per property, not per case.
 - Both forms read from the same `ChoiceSource`, so shrinking (ADR-0001) is identical for both.
 - The choice buffer lives in the `ChoiceSource`, preallocated with the maximum sequence length (RL7) and reused across cases and shrink attempts: drawing a choice never allocates (PF4).
