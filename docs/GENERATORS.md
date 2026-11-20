@@ -97,6 +97,8 @@ forAll(price in prices, user in usernames, l in labels): ...
 | `elements([...])`, `oneOf(...)`, `constant(v)` | fixed choices |
 | `strings(alphabet, ...)`, `alphanumeric`, `identifiers(...)`, `unicodeStrings(...)` | text, including valid UTF-8 over every plane |
 | `seqs`, `tables`, `hashSets`, `optionals` | containers of generated values |
+| `uniqueSeqs(g, ...)`, `sortedSeqs(g, ...)` | sequences of distinct values, or in ascending order |
+| `sized(proc(n: int): Gen[T] = ...)`, `g.resize(n)` | a generator that depends on the current size, or a fixed size |
 | `g.map(f)`, `g.filter(p)`, `g.flatMap(f)` | transformations (shrinking goes through them) |
 | `recursive(base, extend, maxDepth)` | trees: each level is `base` or one level deeper |
 | `newGen(proc(src: ChoiceSource): T = ...)` | anything, from draw primitives |
@@ -110,6 +112,36 @@ let exprs = recursive(leaf(), proc(inner: Gen[Expr]): Gen[Expr] =
     let (l, r) = (inner.generate(src), inner.generate(src))
     if times: Expr(op: '*', lhs: l, rhs: r) else: Expr(op: '+', lhs: l, rhs: r)))
 ```
+
+### Distinct and sorted collections
+
+Two shapes come up often enough to have their own generators. Both shrink like `seqs` and keep their shape while shrinking:
+
+```nim
+forAll(ids in uniqueSeqs(ints(1, 10_000), maxLen = 20)):   # no duplicates
+  check buildIndex(ids).len == ids.len
+
+forAll(xs in sortedSeqs(ints(), minLen = 1)):              # ascending
+  check lowerBound(xs, xs[0]) == 0                        # std/algorithm
+```
+
+`uniqueSeqs` draws again when a value repeats an earlier one, up to `maxTries` (100) times per element, then discards the case like a `filter`. With few distinct values (`uniqueSeqs(bools(), minLen = 3)`) the property gives up and says so. `sortedSeqs` sorts after generating, so it never discards. Prefer them over `assume(xs.isSorted)`, which [gives up](TROUBLESHOOTING.md#gave-up-after-n-passing-cases).
+
+### The size: `sized` and `resize`
+
+The size grows from 0 at the first case to `maxSize` at the last. Built-in collections and integers already follow it; `sized` gives it to your own generator, and `resize` fixes it for one generator:
+
+```nim
+# A square matrix whose side follows the size.
+let matrices = sized(proc(n: int): Gen[seq[seq[int]]] =
+  let side = max(1, n div 10)
+  seqs(seqs(ints(0, 9), side, side), side, side))
+
+# Short lists, whatever the size of the case.
+let shortLists = gen(seq[int]).resize(3)
+```
+
+The size `sized` sees is recorded with the case, so shrinking and replay see the same size (shrinking may lower it, which makes values simpler). Use it as an upper bound or a scale, as above.
 
 ## 5. Pinning known cases
 

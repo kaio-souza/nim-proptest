@@ -153,6 +153,8 @@ Objects, case objects, `distinct` and `ref` objects are derived field by field; 
 | `strings(alphabet, minLen, maxLen)` | strings | shorter, first characters |
 | `seqs(g, minLen, maxLen)` | `seq` of values from `g` | shorter, simpler elements |
 | `tables(k, v, ...)`, `hashSets(g, ...)` | containers of generated values | fewer, simpler entries |
+| `uniqueSeqs(g, ...)`, `sortedSeqs(g, ...)` | `seq` of distinct values, or in ascending order | shorter, simpler elements |
+| `sized(proc(n: int): Gen[T] = ...)`, `g.resize(n)` | a generator built from the current size, or with a fixed size | smaller sizes |
 | `alphanumeric`, `identifiers(maxLen)`, `unicodeStrings(minLen, maxLen)` | letters and digits, identifiers, valid UTF-8 over every plane | shorter, `a` |
 | `frequency([(w, g), ...])` | one generator, chosen by weight | the first entry |
 | `recursive(base, extend, maxDepth)` | trees: each level is `base` or one level deeper | `base` |
@@ -198,6 +200,14 @@ forAll(initSettings(cases = 300), xs in seq[int]):
 
 - **Boundaries.** Integers hit 0, 1, -1 and their type's limits; floats hit -0.0, NaN, infinities and subnormals; collections hit empty and single-element. Integer constants used in the property (`const openFor = 1000`), and integer literals of the test file, are proposed as `v - 1`, `v`, `v + 1`. For a boundary defined elsewhere: `ints(0, 2000, near = [openFor])`.
 - **Swarm testing** (state machines): half of the sequences leave some commands out, so long runs of the others become likely (a bug that needs 12 increments with no reset: found on 3 of 100 seeds before, 97 of 100 with it).
+- **Targeted exploration** for deep states that random cases rarely reach: give the engine a score to climb, and after half of the cases it extends the best case so far.
+  ```nim
+  stateMachine Breaker:
+    ...
+    invariant:
+      target(float(model.reopenings), "reopenings")   # climb toward many reopenings
+  ```
+  A circuit breaker's backoff cap (five reopenings in a row) was found on 3 of 100 seeds without it, 20 with it. It helps where progress accumulates along a sequence; for independent values, prefer `near` hints or a dedicated generator.
 - **Deadlines and budgets**: `deadline` makes a slow case a failure, shrunk to what makes it slow; `timeBudget` and `shrinkTimeBudget` stop early and say so.
 - **Health checks** warn, with a fix, about data too large for `maxChoices`, input spaces smaller than `cases`, and generation dominating the run time.
 
@@ -253,11 +263,10 @@ forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 ## Known limitations
 
 - **A case that never returns hangs the test**: `deadline` catches slow cases, but stopping one that loops forever needs a watchdog thread (planned after 1.0). The seed is already in `.proptest/last-run` to replay it.
-- **Deep states are still rare**: a state that needs a long, specific path (five reopenings of a breaker in a row, each after the right wait) is seldom reached by random sequences. Write that path as a `replayCommands` test.
+- **Deep states are still hard**: a state that needs a long, specific path (five reopenings of a breaker in a row, each after the right wait) is seldom reached by random sequences. `target(score)` helps when the property can measure progress (3 → 20 of 100 seeds for the breaker); for a path you already know, write it as a `replayCommands` test.
 - **`--panics:on`**: `Defect`s end the process at the first failing case, so it cannot be shrunk (a compile-time warning says so).
 - A broad `except CatchableError` inside the property body also catches the library's internal signals (`assume`, failed `check`); re-raise them or catch narrower types.
-- The values generated for a seed may change between versions before 1.0 (always listed in the [CHANGELOG](CHANGELOG.md)), so an old seed may not replay after an upgrade.
-- Generation speed is still above some targets (about 20 ns per `int` in release); see [measured performance](docs/ROADMAP.md#performance-against-the-initial-targets).
+- The values generated for a seed change only in minor releases, always listed in the [CHANGELOG](CHANGELOG.md) ([stability policy](docs/STABILITY.md)), so an old seed may not replay after a minor upgrade.
 
 ## Stateful testing
 

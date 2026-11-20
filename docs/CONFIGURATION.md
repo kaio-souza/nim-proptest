@@ -110,7 +110,7 @@ Pass them to `initSettings(...)` among the arguments of `forAll`, `forAllResult`
 
 **`cases`**: cases explored, passing or failing. Cost grows linearly; the chance of hitting a bug that needs a rare input grows too, but slowly: a bug hit by 1 input in 1000 is found by 100 cases about 1 run in 10, by 1000 cases about 2 runs in 3. Raise it in CI rather than in the code. **Changing it changes the inputs** of every case (sizes grow over the run, see `maxSize`), so a seed only replays with the same `cases`.
 
-**`maxSize`**: how large values get. Sizes grow from 0 at the first case to `maxSize` at the last, so the first cases are small and simple. Discarded cases do not advance the size: a property that discards everything keeps generating small values ([gave up](TROUBLESHOOTING.md#gave-up-after-n-passing-cases)). Measured on `seq[int]` with 100 cases:
+**`maxSize`**: how large values get. Sizes grow from 0 at the first case to `maxSize` at the last, so the first cases are small and simple. Discarded cases advance the size too, so a property that discards small inputs (`assume(xs.len > 30)`) still reaches larger ones. Inside a generator, `sized` reads the current size and `resize` fixes it ([GENERATORS.md](GENERATORS.md)). Measured on `seq[int]` with 100 cases:
 
 | `maxSize` | mean length | longest |
 |---|---|---|

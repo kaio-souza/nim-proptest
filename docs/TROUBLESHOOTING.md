@@ -42,32 +42,29 @@ Find what you see, then read why it happens and what to do. The reports below ar
 ### Gave up after N passing cases
 
 ```
-Property 'assume' gave up after 0 passing cases: 1001 cases discarded (0 by filters, 0 too large).
+Property 'sorted' gave up after 0 passing cases: 1001 cases discarded (0 by filters, 0 too large).
 ```
 
-**Why.** Too many cases were thrown away: by `assume(...)`, by a `filter` that rejected 100 values in a row, or because they were too large for `maxChoices`. After `cases × maxDiscardRatio` discards (1000 by default) the property stops, because it is no longer testing much. When most discards come from filters, the message adds "Most discards come from `filter`: generate valid values directly instead."
+**Why.** Too many cases were thrown away: by `assume(...)`, by a `filter` or `uniqueSeqs` that rejected 100 values in a row, or because they were too large for `maxChoices`. After `cases × maxDiscardRatio` discards (1000 by default) the property stops, because it is no longer testing much. When most discards come from filters, the message adds "Most discards come from `filter` or `uniqueSeqs` rejecting values: generate valid values directly, or widen the generator."
 
-Not one case passed above, and this is why: sizes grow with the cases that **pass**, so while every case is discarded, inputs stay as small as at the first case, and a condition on their size never becomes true.
+Above, the property wanted sorted lists of at least 5 elements, and random lists of that length are almost never sorted.
 
-**What to do.** Generate valid values instead of rejecting invalid ones. The property above wanted lists of more than 30 elements whose first element is not greater than the second:
+**What to do.** Generate valid values instead of rejecting invalid ones:
 
 ```nim
 # Gives up: rejects every case.
 forAll(xs in seq[int]):
-  assume(xs.len > 30 and xs[0] <= xs[1])
+  assume(xs.len >= 5 and xs.isSorted)
   ...
 
 # Passes 100 cases: builds only valid inputs, and still shrinks.
-let longLists = seqs(ints(), minLen = 31, maxLen = 200).map(
-  proc(xs: seq[int]): seq[int] =
-    result = xs
-    if result[0] > result[1]: swap(result[0], result[1]))
-
-forAll(xs in longLists):
+forAll(xs in sortedSeqs(ints(), minLen = 5)):
   ...
 ```
 
-For values that depend on each other (a start before an end), draw the first and then the second within its range, as in [GENERATORS.md](GENERATORS.md). Keep `assume` for rare exclusions (`assume(d != 0)`).
+`sortedSeqs` and `uniqueSeqs` cover the two most common shapes. For values that depend on each other (a start before an end), draw the first and then the second within its range, as in [GENERATORS.md](GENERATORS.md). Keep `assume` for rare exclusions (`assume(d != 0)`).
+
+Sizes grow with every attempt, discarded ones included, so a condition on size alone (`assume(xs.len > 30)`) only costs discards early in the run: it passes, with a few hundred discards.
 
 **Trade-off.** Raising `maxDiscardRatio` makes the message go away but not the cost: each discarded case still runs the generator, and the cases that pass are the few that happened to fit, so they may all look alike.
 

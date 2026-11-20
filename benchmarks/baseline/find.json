@@ -1,31 +1,35 @@
 {
   "reverse drops last element": {
     "found": 20,
-    "median": 5
+    "median": 4
   },
   "midpoint overflow (limits)": {
     "found": 20,
-    "median": 7
+    "median": 10
   },
   "boundary 100 in 0..1000": {
     "found": 20,
     "median": 3
   },
   "exact 1000 in 0..2000": {
-    "found": 14,
-    "median": 52
+    "found": 16,
+    "median": 31
   },
   "stateful queue (3 push + 1 pop)": {
     "found": 20,
     "median": 8
   },
   "breaker: probe at exactly 1000 ms": {
-    "found": 13,
-    "median": 40
+    "found": 15,
+    "median": 59
   },
   "breaker: backoff cap (5 reopenings)": {
     "found": 1,
-    "median": 72
+    "median": 92
+  },
+  "breaker: backoff cap, target(level)": {
+    "found": 3,
+    "median": 88
   },
   "12 increments without reset": {
     "found": 20,

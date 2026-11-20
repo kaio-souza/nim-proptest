@@ -122,8 +122,8 @@ proc minimizeValues(sh: var Shrinker): bool =
 proc mergeChunks(sh: var Shrinker): bool =
   ## Deletes a chunk and adds its last choice (typically a magnitude) to an
   ## earlier choice, so two elements become one: `[1, 1]` → `[2]` when only
-  ## the total matters. Sizes 3 and 2 cover "continue + sign + magnitude" and
-  ## "continue + magnitude" element layouts. Costlier: run as a fallback.
+  ## the total matters. Sizes 3, 2 and 1 cover element layouts of one or two
+  ## choices after the "continue" choice. Costlier: run as a fallback.
   const reach = 8
   for k in [3, 2, 1]:
     var i = sh.best.len - k
@@ -133,17 +133,25 @@ proc mergeChunks(sh: var Shrinker): bool =
         var j = i - 1
         while j >= max(0, i - reach) and not sh.exhausted and i + k <= sh.best.len:
           var cand = sh.best[0 ..< i] & sh.best[i + k .. ^1]
-          cand[j] = if cand[j] > high(uint64) - moved: high(uint64) else: cand[j] + moved
+          let base = cand[j]
+          cand[j] = if base > high(uint64) - moved: high(uint64) else: base + moved
           if sh.attempt(cand):
             result = true
             break
+          # Signed integers are one zigzag choice (+v is 2v - 1): the sum of
+          # two positive values is the sum of their choices plus one.
+          if cand[j] < high(uint64) and (base and 1) == 1 and (moved and 1) == 1:
+            inc cand[j]
+            if sh.attempt(cand):
+              result = true
+              break
           dec j
       i = min(i - 1, sh.best.len - k)
 
 proc lowerAndBump(sh: var Shrinker): bool =
   ## Lowers a choice by one and raises the next one by one: `(1, 0)` →
-  ## `(0, 1)`, i.e. `-1` → `1` in the sign + magnitude layout of integers,
-  ## when 0 itself is not a counterexample. Fallback pass.
+  ## `(0, 1)`: moves weight to a later choice when lowering the earlier one
+  ## alone does not fail. Fallback pass.
   var i = 0
   while i + 1 < sh.best.len and not sh.exhausted:
     if sh.best[i] > 0 and sh.best[i + 1] < high(uint64):

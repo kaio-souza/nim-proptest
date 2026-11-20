@@ -37,16 +37,43 @@ suite "choice source":
     check not src.more(m)
 
   test "S1: integers shrink toward zero, positive before negative":
-    check replaying([0'u64, 5]).drawInt(-10, 10) == 5
-    check replaying([1'u64, 4]).drawInt(-10, 10) == -5
-    check replaying([0'u64, 0]).drawInt(-10, 10) == 0
+    # One choice per signed integer, in zigzag order: 0, 1, -1, 2, -2, ...
+    var expected = @[0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5]
+    for c, v in expected:
+      check replaying([uint64(c)]).drawInt(-10, 10) == v
+    # An asymmetric range: alternate while both sides have values, then the
+    # rest of the longer side.
+    expected = @[0, 1, -1, 2, -2, 3, 4, 5, 6]
+    for c, v in expected:
+      check replaying([uint64(c)]).drawInt(-2, 6) == v
+    check replaying([0'u64]).drawInt(3, 9) == 3             # origin: the bound closest to 0
+    check replaying([0'u64]).drawInt(-9, -3) == -3
 
   test "G2: drawInt reaches both extremes of every width":
-    check replaying([0'u64, high(uint64)]).drawInt(low(int8), high(int8)) == high(int8)
-    check replaying([1'u64, high(uint64)]).drawInt(low(int8), high(int8)) == low(int8)
-    check replaying([0'u64, high(uint64)]).drawInt(low(int64), high(int64)) == high(int64)
-    check replaying([1'u64, high(uint64)]).drawInt(low(int64), high(int64)) == low(int64)
+    check replaying([253'u64]).drawInt(low(int8), high(int8)) == high(int8)
+    check replaying([high(uint64)]).drawInt(low(int8), high(int8)) == low(int8)
+    check replaying([high(uint64) - 2]).drawInt(low(int64), high(int64)) == high(int64)
+    check replaying([high(uint64)]).drawInt(low(int64), high(int64)) == low(int64)
     check replaying([high(uint64)]).drawInt(0'u64, high(uint64)) == high(uint64)
+
+  test "S1/Q5: every signed value has exactly one choice, and replays to itself":
+    # The choice a value is recorded with (as hints do) reads back as the
+    # value, for ranges of every shape: no value is unreachable.
+    forAll(initSettings(seed = 4, cases = 300), lo in ints(-20, 20), span in ints(0, 40), k in ints(0, 40)):
+      let hi = lo + span
+      let v = lo + min(k, span)
+      let rec = newChoiceSource(1)
+      rec.startRandom(10)
+      rec.useHints([int64(v)])
+      var got = false
+      for attempt in 0 ..< 400:          # a hint is proposed on some draws
+        rec.startRandom(10)
+        let x = rec.drawInt(lo, hi, near = [int64(v)])
+        if x == v:
+          check replaying(rec.choices).drawInt(lo, hi) == v
+          got = true
+          break
+      check got
 
   test "G2/Q5: drawInt stays in bounds for any range":
     forAll(initSettings(seed = 3, cases = 300), seed in uint64, a in int64, b in int64):
@@ -132,7 +159,10 @@ suite "choice source":
   test "PF4: drawing choices does not allocate once the buffers exist":
     let src = newChoiceSource(9)
     src.startRandom(100)
-    for _ in 0 ..< 1_000: discard src.drawInt(low(int), high(int))
+    # Warm-up with the same work: buffers grow on demand, then stay.
+    for _ in 0 ..< 1_000:
+      discard src.drawInt(low(int), high(int))
+      discard src.drawBool()
     let before = getOccupiedMem()
     for _ in 0 ..< 50:
       src.startRandom(100)

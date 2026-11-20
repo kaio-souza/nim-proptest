@@ -80,7 +80,8 @@ suite "engine":
     check r.failures.len == 0
 
   test "RL7: overruns are discarded, not failed":
-    let r = forAllResult(initSettings(seed = 10, maxChoices = 1, cases = 5), x in int):
+    # Two integers need two choices; only one is allowed.
+    let r = forAllResult(initSettings(seed = 10, maxChoices = 1, cases = 5), x in int, y in int):
       discard
     check r.status == psGaveUp
     check r.overruns > 0

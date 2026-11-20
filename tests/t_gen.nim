@@ -1,6 +1,6 @@
 ## Generators: type-inferred and combinators.
 
-import std/[unittest, sets, math, strutils, sequtils]
+import std/[unittest, sets, math, strutils, sequtils, algorithm]
 import proptest
 
 type
@@ -50,19 +50,21 @@ suite "type-inferred generators":
     # pipeline; this test pins the primitives directly.
     let src = newChoiceSource(42)
     src.startRandom(50)
-    # Values changed in v0.3 (edge bias, ADR-0012): see the CHANGELOG.
-    check show(src.arbitrary(seq[int])) == "@[-24728121, -9223372036854775808, -14706, 2, " &
-      "-1896342, -9223372036854775808, -556, 48, 5, -9223372036854775808, 0, -354848139, " &
-      "-26786, 0, -9223372036854775808, -10902504, 1943, -9223372036854775808, -25, -40, " &
-      "-2, -44, 0, 0, 14, 7, -9223372036854775808, -1, 0, 0, -2, -33, 964188]"
-    check src.arbitrary(string) == "Kl1_0/+sfEIl,yJkdPkvxbmv8WpmU!OiEeL}o;7$ue(~d4 U;+>3:][I h>4=-$>x`NAVJN1j#YMX;d06~XxF*)c"
-    check src.arbitrary(int8) == 95
-    check src.arbitrary(uint16) == 39540
+    # Values changed in v0.3 (edge bias, ADR-0012) and in the generation
+    # changes after v0.4 (one zigzag choice per signed integer): see the
+    # CHANGELOG.
+    check show(src.arbitrary(seq[int])) == "@[-2, -24728120, -18, -9223372036854775808, " &
+      "-56605757, 0, 1902, -3, 0, -963016698, -36950, -717, -9223372036854775808, -50, 693, " &
+      "4545, 1, -9, 78, 9223372036854775807, 13, -20, -17, 9223372036854775807, 1, 0, " &
+      "-481264914, -11, 0, -92933, 805087730, 0, -110659]"
+    check src.arbitrary(string) == ""
+    check src.arbitrary(int8) == -14
+    check src.arbitrary(uint16) == 54623
     check src.arbitrary(Color) == green
-    check src.arbitrary(Option[int]) == none(int)
-    check src.arbitrary((bool, char)) == (false, '\x11')
-    check $src.arbitrary(float) == "-0.0"
-    check src.choiceCount == 289
+    check src.arbitrary(Option[int]) == some(-19)
+    check src.arbitrary((bool, char)) == (true, '\xA9')
+    check $src.arbitrary(float) == "0.0"
+    check src.choiceCount == 80
 
 suite "combinators":
   test "C1: map transforms values":
@@ -107,3 +109,52 @@ suite "combinators":
     expect ValueError: discard floats(1.0, 0.0)
     expect ValueError: discard chars("")
     expect ValueError: discard seqs(bools(), -1)
+
+suite "size and collection shapes (C5, C6)":
+  test "C5: sized sees the size, which grows over the run":
+    var sizes: seq[int]
+    let g = sized(proc(n: int): Gen[int] = constant(n))
+    forAll(initSettings(seed = 31, cases = 50, maxSize = 49), n in g):
+      sizes.add n
+    check sizes[0] == 0
+    check sizes[^1] == 49
+    check sizes == sizes.sorted
+
+  test "V-C5: a sized failure shrinks to the smallest failing size and replays":
+    let g = sized(proc(n: int): Gen[seq[int]] = seqs(ints(0, 9), n, n))
+    let r = forAllResult(initSettings(seed = 32), xs in g):
+      check xs.len < 30
+    check r.status == psFailed          # not flaky: the size is replayed
+    check r.failures[0].inputs[0].value == "@[" & repeat("0", 30).join(", ") & "]"
+
+  test "C5: resize fixes the size of a generator":
+    var longest = 0
+    forAll(initSettings(seed = 33), xs in gen(seq[int]).resize(2)):
+      longest = max(longest, xs.len)
+    check longest <= 5
+    expect ValueError:
+      discard gen(int).resize(-1)
+
+  test "C6: uniqueSeqs gives distinct values and shrinks to small distinct ones":
+    forAll(initSettings(seed = 34), xs in uniqueSeqs(ints(0, 50), maxLen = 20)):
+      check xs.toHashSet.len == xs.len
+    let r = forAllResult(initSettings(seed = 35), xs in uniqueSeqs(ints(0, 1000))):
+      check xs.len < 4
+    let shrunk = r.failures[0].inputs[0].value
+    check shrunk.count(',') == 3                    # exactly 4 elements
+    for c in shrunk: check c notin {'4' .. '9'}     # all of them small
+
+  test "C6: uniqueSeqs over too few distinct values gives up and says why":
+    let r = forAllResult(initSettings(seed = 36), xs in uniqueSeqs(bools(), minLen = 3)):
+      discard
+    check r.status == psGaveUp
+    check "uniqueSeqs" in r.message
+
+  test "C6: sortedSeqs are in order and shrink like seqs":
+    let r = forAllResult(initSettings(seed = 37), xs in sortedSeqs(ints(-100, 100))):
+      check xs.isSorted
+      check xs.len < 3 or xs[^1] < 50
+    check r.status == psFailed
+    check r.failures[0].inputs[0].value == "@[0, 0, 50]"
+    expect ValueError:
+      discard sortedSeqs(ints(), 3, 1)

@@ -23,8 +23,8 @@ Rules of the check:
 | C2 | `oneOf`, `elements`, `constant` | done | t_gen | n/a | |
 | C3 | `frequency` | done | t_derive | n/a | |
 | C4 | `recursive` | done | t_derive | n/a | |
-| C5 | `sized`, `resize` | pending | | | generation changes |
-| C6 | `unique`, `sortedSeq` | pending | | | generation changes |
+| C5 | `sized`, `resize` | done | t_gen | n/a | the size is recorded as a choice: shrinking and replay see it |
+| C6 | `uniqueSeqs`, `sortedSeqs` | done | t_gen | n/a | `uniqueSeqs` redraws repeats, then discards like `filter` |
 | C7 | Custom generators as procs | done | t_gen | n/a | `newGen`, `arbitrary` overloads |
 | S1 | Integrated shrinking | done | t_choices, t_shrink, t_values | b_shrink | |
 | S2 | Shrunk values satisfy the generator | done | t_values | n/a | |
@@ -54,7 +54,8 @@ Rules of the check:
 | D1 | `classify` | done | t_find | n/a | also `label`; discards and shrinking not counted |
 | D2 | `cover` | done | t_find | n/a | fails only when confidently below (Wilson 95%); per sequence in state machines |
 | D3 | Size statistics | deferred | | | |
-| O1 | Quiet exploration | done | t_integration | n/a | |
+| D4 | Targeted exploration | done | t_find | b_find | `target(score, name)`; breaker backoff cap 3 → 20 of 100 seeds (ADR-0016) |
+| O1 | Quiet exploration | done | t_integration | n/a | the library prints only the final report; the body's own output is not captured (deferred, ROADMAP) |
 | O2 | Verbosity levels | done | t_find | n/a | `verbosity`, `PROPTEST_VERBOSITY` |
 | O3 | JSON report | done | t_integration, t_engine | n/a | JSON Lines, `format` 1; `report` setting, `PROPTEST_REPORT` |
 | O4 | Statistics and warnings in the report | done | t_find | n/a | labels, stateful commands and lengths, health-check warnings |
@@ -82,7 +83,7 @@ Rules of the check:
 | RL14 | Shrinker invariants | done | t_shrink | n/a | |
 | RL15 | Stability policy | done | t_golden, t_gen | n/a | [STABILITY.md](STABILITY.md), ADR-0015; snapshot of 51 properties through the whole pipeline |
 | PF1 | Benchmark suite with baseline | done | bench | b_gen, b_shrink | |
-| PF2 | Fast default run, debug and release | done | bench | b_gen | 100 cases: 0.16 ms (`int`) and 1.5 ms (`seq[int]`) in debug; ROADMAP has the table |
+| PF2 | Fast default run, debug and release | done | bench | b_gen | 100 cases of `x in int`: 0.07 ms in debug; ROADMAP has the table |
 | PF3 | Parallel cases | deferred | | | |
 | PF4 | No allocation per choice | done | t_choices | b_gen | allocation gate |
 | PF5 | Built-in generators without closures | done | bench | b_gen | `TypeGen` + `drawFrom` |

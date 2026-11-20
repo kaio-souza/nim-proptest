@@ -120,6 +120,11 @@ proc snapshot*(): string =
     proc(inner: Gen[string]): Gen[string] =
       seqs(inner, 1, 3).map(proc(xs: seq[string]): string = "(" & xs.join(" ") & ")")))
 
+  values("sized", sized(proc(n: int): Gen[seq[int]] = seqs(ints(0, n), maxLen = n)))
+  values("resize", gen(seq[int8]).resize(3))
+  values("uniqueSeqs", uniqueSeqs(ints(0, 30), maxLen = 8))
+  values("sortedSeqs", sortedSeqs(ints(-50, 50), maxLen = 8))
+
   # --- Exploration settings ------------------------------------------------
   block:
     let (r, shown) = minedRun(runSeed)
@@ -137,6 +142,15 @@ proc snapshot*(): string =
                          xs in seq[int]):
       shown.add $xs.len
     section("sizes (cases = 20, maxSize = 10)", r, shown)
+
+  block:
+    var shown: seq[string]
+    let r = forAllResult(settings("targeted"), xs in seq[int8]):
+      shown.add show(xs)
+      var odd = 0
+      for x in xs: odd += int(x) and 1
+      target(float(odd), "odd")
+    section("targeted exploration", r, shown)
 
   # --- Shrinking: the reported counterexamples (S1-S3, RL5) -----------------
   block:

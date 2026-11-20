@@ -255,3 +255,64 @@ suite "health checks (RL11)":
     let r = forAllResult(initSettings(seed = 14, suppress = {hcFewDistinct}), x in slow):
       discard
     check r.warnings.anyIt("generating inputs takes" in it)
+
+# --- Targeted exploration (D4, ADR-0016) --------------------------------------
+
+type Counter4 = ref object
+  n: int
+
+template climbMachine(name: untyped; targeted: bool) =
+  stateMachine name:
+    model: 0
+    setup:
+      let c = Counter4()
+    command incr():
+      run:
+        inc c.n
+        c.n != 25            # planted: fails at 25, a state reached by climbing
+      postcondition: result
+      update: inc model
+    command decr():
+      run: dec c.n
+      update: dec model
+    command reset():
+      run: c.n = 0
+      update: model = 0
+    invariant:
+      when targeted:
+        target(float(model), "count")
+      else:
+        discard
+
+climbMachine(Climbing, true)
+climbMachine(NotClimbing, false)
+
+suite "targeted exploration (D4)":
+  test "D4: target reaches a deep state more often than random sequences":
+    var targeted, plain = 0
+    for seed in 1'u64 .. 40'u64:
+      if not stateMachineResult(Climbing, initSettings(seed = seed)).passed: inc targeted
+      if not stateMachineResult(NotClimbing, initSettings(seed = seed)).passed: inc plain
+    check targeted > plain
+    check targeted >= 34
+
+  test "D4: the best score is reported, in the notes and in the JSON report":
+    let r = forAllResult(initSettings(seed = 41, name = "scored"), x in ints(0, 100)):
+      target(float(x), "x")
+      target(float(-x))
+    check r.passed
+    check r.targets.len == 2
+    check r.targets[0].label == "x"
+    check r.targets[0].best == 100.0
+    check r.targets[1].label == ""
+    check "Targets (best score while exploring)" in formatNotes(r)
+    check "\"targets\":[{\"label\":\"x\",\"best\":100.0}" in toJsonLine(r)
+
+  test "D4: a property without target explores exactly as before":
+    # Targeting only starts from scores: no `target`, no extended cases.
+    let a = forAllResult(initSettings(seed = 42, name = "same"), xs in seq[int]):
+      discard
+    let b = forAllResult(initSettings(seed = 42, name = "same"), xs in seq[int]):
+      classify(xs.len > 3, "long")
+    check a.casesRun == b.casesRun
+    check a.targets.len == 0

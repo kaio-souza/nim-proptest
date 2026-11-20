@@ -1,7 +1,7 @@
 ## Writing generators (docs/GENERATORS.md): every snippet of the guide.
 ## All properties pass; CI compiles and runs this file.
 
-import proptest, std/[unittest, strutils]
+import proptest, std/[unittest, strutils, algorithm, sets]
 
 # --- 1. Nothing to write: derived generators ------------------------------------
 
@@ -80,6 +80,21 @@ suite "writing generators":
   test "recursive generators":
     forAll(e in exprs):
       check eval(e) >= 0
+
+  test "distinct and sorted collections":
+    forAll(ids in uniqueSeqs(ints(1, 10_000), maxLen = 20)):   # no duplicates
+      check ids.toHashSet.len == ids.len
+    forAll(xs in sortedSeqs(ints(), minLen = 1)):              # ascending
+      check lowerBound(xs, xs[0]) == 0
+
+  test "the size: sized and resize":
+    let matrices = sized(proc(n: int): Gen[seq[seq[int]]] =
+      let side = max(1, n div 10)
+      seqs(seqs(ints(0, 9), side, side), side, side))
+    let shortLists = gen(seq[int]).resize(3)
+    forAll(m in matrices, l in shortLists):
+      check m.len == m[0].len
+      check l.len <= 10
 
   test "explicit examples run first":
     forAll(user in usernames, example("root"), example("a")):

@@ -33,7 +33,8 @@ type
     mode: SourceMode
     rng: Xoshiro256
     prefix: seq[uint64]
-    buf: seq[uint64]        # fixed length maxChoices; `count` entries in use
+    forced: int             # exploring: the first `forced` choices come from `prefix`
+    buf: seq[uint64]        # grows up to maxChoices; `count` entries in use
     count: int
     maxChoices: int
     size: int
@@ -58,6 +59,7 @@ type
     timing*: bool           # health check: this case measures generation time
     genNs*: int64           # generation time measured in timed cases
     genStart: MonoTime
+    caseTargets*: seq[tuple[label: string, score: float]] # `target` calls of this case
 
   LabelKind* = enum
     lkClassify  ## `classify(cond, "name")`
@@ -86,6 +88,7 @@ type
 
 const
   defaultMaxChoices* = 8192
+  initialChoices = 256   # first buffer size; doubles up to maxChoices
   defaultMaxDepth* = 5
     ## Nesting depth of recursive data while exploring (ADR-0013).
   defaultEdgeBias* = 0.25
@@ -117,20 +120,30 @@ proc newChoiceSource*(seed: uint64; maxChoices = defaultMaxChoices;
   result = ChoiceSource(rng: initXoshiro256(seed), maxChoices: maxChoices,
                         edgeCut: uint64(clamp(edgeBias, 0.0, 1.0) * 65536.0),
                         maxDepth: defaultMaxDepth)
-  result.buf = newSeq[uint64](maxChoices)
-  result.prefix = newSeqOfCap[uint64](maxChoices)
+  # Small buffers that grow on demand up to `maxChoices`: most cases use a
+  # few dozen choices, and allocating (and zeroing) `maxChoices` up front
+  # cost more than a whole run of a simple property.
+  result.buf = newSeq[uint64](min(maxChoices, initialChoices))
+  result.prefix = newSeqOfCap[uint64](min(maxChoices, initialChoices))
   result.spans = newSeqOfCap[Span](64)
+
+proc setSize*(src: ChoiceSource; size: int) {.inline.} =
+  ## Sets the size the next draws see (`resize`, C5). Exploration only reads
+  ## it to shape proposals; replay ignores it.
+  src.size = max(size, 0)
+  src.wideBits = clamp(1 + (63 * src.size) div 100, 1, 64)
 
 proc resetCase(src: ChoiceSource; size: int) {.inline.} =
   src.count = 0
-  src.size = size
-  src.wideBits = clamp(1 + (63 * size) div 100, 1, 64)
+  src.setSize(size)
   src.phase = cpGenerate
   src.recordInputs = false
   src.inputs.setLen(0)
   src.spans.setLen(0)
   src.steps.setLen(0)
+  src.caseTargets.setLen(0)
   src.depth = 0
+  src.forced = 0
 
 proc startRandom*(src: ChoiceSource; size: int) =
   ## Prepares a new exploration case of the given size.
@@ -138,6 +151,30 @@ proc startRandom*(src: ChoiceSource; size: int) =
   src.mode = smRandom
   inc src.caseId
   src.collect = true
+
+proc startExtend*(src: ChoiceSource; base: openArray[uint64]; keep, size: int) =
+  ## Prepares an exploration case that starts with the first `keep` choices
+  ## of `base` and explores from there (targeted exploration): the prefix
+  ## leads back to a promising state, the rest is new.
+  src.startRandom(size)
+  let k = clamp(keep, 0, base.len)
+  src.prefix.setLen(k)
+  for i in 0 ..< k: src.prefix[i] = base[i]
+  src.forced = k
+
+proc nextRandom*(src: ChoiceSource): uint64 {.inline.} =
+  ## 64 random bits from the property's stream, not recorded as a choice.
+  src.rng.next()
+
+proc recordTarget*(src: ChoiceSource; score: float; label: string) =
+  ## `target(score, label)`: keeps the highest score of this case per label.
+  ## Only while exploring; NaN is ignored.
+  if src.isNil or not src.collect or score != score: return
+  for t in src.caseTargets.mitems:
+    if t.label == label:
+      t.score = max(t.score, score)
+      return
+  src.caseTargets.add (label, score)
 
 proc startReplay*(src: ChoiceSource; candidate: openArray[uint64]; size: int) =
   ## Prepares a case that replays `candidate` (zeros after its end).
@@ -256,18 +293,31 @@ proc labelStats*(src: ChoiceSource): seq[LabelStat] =
 
 # -------------------------------------------------------------- core drawing
 
+# The hot path of generation. Indices are checked by hand (`count` against
+# the length of `buf`, which grows up to `maxChoices`), and conversions stay in range by
+# construction, so runtime checks are off here; so are stack and line traces,
+# which only help locate failures in user code (library frames are skipped
+# by failure signatures anyway). This mostly speeds up debug builds.
+{.push boundChecks: off, rangeChecks: off, overflowChecks: off,
+       stackTrace: off, lineTrace: off.}
+
 proc overrun(src: ChoiceSource) {.noinline, noreturn.} =
   raise newException(Overrun, "case needed more than " & $src.maxChoices & " choices")
+
+proc grow(src: ChoiceSource) {.noinline.} =
+  ## The buffer is full: double it, up to `maxChoices`, or overrun (RL7).
+  if src.buf.len >= src.maxChoices: overrun(src)
+  src.buf.setLen(min(src.maxChoices, 2 * src.buf.len))
 
 template drawImpl(src: ChoiceSource; bound: uint64; proposal: untyped): uint64 =
   ## Records one choice in `0 .. bound`. `proposal` is evaluated only in
   ## random mode and must already be within bounds.
   block:
     let i = src.count
-    if i >= src.maxChoices: overrun(src)
+    if i >= src.buf.len: grow(src)   # one test on the hot path
     var v: uint64
     if src.mode == smRandom:
-      v = proposal
+      v = if i < src.forced: min(src.prefix[i], bound) else: proposal
     else:
       v = if i < src.prefix.len: min(src.prefix[i], bound) else: 0'u64
     src.buf[i] = v
@@ -282,6 +332,13 @@ proc drawBool*(src: ChoiceSource; p = 0.5): bool {.inline.} =
   ## `true` with probability `p` while exploring. Shrinks toward `false`.
   drawImpl(src, 1, (if p == 0.5: src.rng.next() shr 63
                     elif src.rng.nextFloat() < p: 1'u64 else: 0'u64)) == 1
+
+proc drawSize*(src: ChoiceSource): int {.inline.} =
+  ## The current size as a recorded choice (`sized`, C5): exploration
+  ## records the size, replay reads it back, so shrinking and the final
+  ## re-runs see the size the case was generated with, and shrinking can
+  ## lower it like any choice.
+  int(drawImpl(src, uint64(high(int32)), uint64(min(src.size, high(int32)))))
 
 proc drawIndex*(src: ChoiceSource; n: int): int {.inline.} =
   ## Uniform index in `0 ..< n` (`n >= 1`). Shrinks toward 0.
@@ -322,19 +379,20 @@ proc drawRune*(src: ChoiceSource): int =
     else: uint64(indexOfRune(runeEdges[int((r shr 3) mod uint64(runeEdges.len))]))))
   runeOfIndex(int(i))
 
-proc proposeMagnitude(src: ChoiceSource; maxMag: uint64): uint64 {.inline.} =
-  ## Random-mode distribution for magnitudes (2 PRNG calls). With
+proc proposeFrom(src: ChoiceSource; r: uint64; maxMag: uint64): uint64 {.inline.} =
+  ## Random-mode distribution for magnitudes, from 64 random bits `r` (and
+  ## one more PRNG call only for values wider than 24 bits). With
   ## probability `edgeBias` (default 1/4) an edge: 0 (1/4 of edges), 1 (1/4)
   ## or the maximum (1/2: type limits are where bugs live). Otherwise small
   ## values up to the size (5/12) or values of up to `wideBits` random bits
   ## (7/12). Only exploration uses it: the shrink order does not depend on it.
-  let r = src.rng.next()
+  ## Bits of `r`: 0-15 edge or not, 16-17 which edge, 16-31 small or wide,
+  ## 32-37 width, 38-61 a narrow value, 63 left to the caller (the sign).
   if (r and 0xFFFF) < src.edgeCut:
     case (r shr 16) and 3
     of 0: return 0
     of 1: return min(1'u64, maxMag)
     else: return maxMag
-  let x = src.rng.next()
   var limit: uint64
   if ((r shr 16) and 0xFFFF) < 27307:   # 5/12 of 65536
     limit = uint64(max(src.size, 1))
@@ -343,13 +401,17 @@ proc proposeMagnitude(src: ChoiceSource; maxMag: uint64): uint64 {.inline.} =
     let bits = 1 + int((((r shr 32) and 63) * uint64(src.wideBits)) shr 6)
     limit = if bits >= 64: high(uint64) else: (1'u64 shl bits) - 1
   let b = min(maxMag, limit)
-  if b == high(uint64): return x
+  if b == high(uint64): return src.rng.next()
   # countLeadingZeroBits(0) is undefined behavior (wrong only in release).
   if b == 0: return 0
   # Into 0 .. b without division: mask to the next power of two, then fold.
-  var v = x and (high(uint64) shr countLeadingZeroBits(b))
+  let mask = high(uint64) shr countLeadingZeroBits(b)
+  var v = (if mask <= 0xFFFFFF'u64: (r shr 38) and mask else: src.rng.next() and mask)
   if v > b: v -= b + 1
   v
+
+proc proposeMagnitude(src: ChoiceSource; maxMag: uint64): uint64 {.inline.} =
+  src.proposeFrom(src.rng.next(), maxMag)
 
 proc drawMagnitude*(src: ChoiceSource; maxMag: uint64): uint64 {.inline.} =
   ## Choice in `0 .. maxMag`, biased toward small values and boundaries
@@ -372,6 +434,28 @@ proc useHints*(src: ChoiceSource; primary: openArray[int64]; secondary: openArra
   src.nPrimary = primary.len
   src.hints.add secondary
 
+# Signed ranges around an origin (0, or the bound closest to 0) are one
+# choice in zigzag order: 0, +1, -1, +2, -2, ... while both sides have
+# values, then the rest of the longer side. Smaller choices are values closer
+# to the origin, and a positive value is simpler than its negative.
+
+proc zigzag(up, down: uint64; neg: bool; m: uint64): uint64 {.inline.} =
+  ## Choice of the value `origin + m` (`origin - m` when `neg`).
+  if m == 0: return 0
+  let k = min(up, down)
+  if m <= k: (if neg: 2 * m else: 2 * m - 1)
+  else: 2 * k + (m - k)
+
+proc unzigzag(up, down, c: uint64; neg: var bool): uint64 {.inline.} =
+  ## Inverse of `zigzag`: the distance from the origin, and its side.
+  let k = min(up, down)
+  if c <= 2 * k:
+    neg = c > 0 and (c and 1) == 0
+    (c + 1) shr 1
+  else:
+    neg = down > up
+    k + (c - 2 * k)
+
 proc forceInt[T: SomeInteger](src: ChoiceSource; lo, hi, v: T): T =
   ## Records the choices that `drawInt(lo, hi)` would read to produce `v`
   ## (same layout), so a hinted value shrinks like any other.
@@ -390,12 +474,15 @@ proc forceInt[T: SomeInteger](src: ChoiceSource; lo, hi, v: T): T =
       T(cast[int64](cast[uint64](origin) + drawImpl(src, up, above)))
     elif up == 0:
       T(cast[int64](cast[uint64](origin) - drawImpl(src, down, below)))
-    elif x < origin:
-      discard drawImpl(src, 1, 1'u64)
-      T(cast[int64](cast[uint64](origin) - (drawImpl(src, down - 1, below - 1) + 1)))
     else:
-      discard drawImpl(src, 1, 0'u64)
-      T(cast[int64](cast[uint64](origin) + drawImpl(src, up, above)))
+      # Decode what was recorded, as the other branches do: a forced prefix
+      # (targeted exploration) may record a different choice than proposed.
+      let c = drawImpl(src, up + down, (if x < origin: zigzag(up, down, true, below)
+                                        else: zigzag(up, down, false, above)))
+      var neg: bool
+      let m = unzigzag(up, down, c, neg)
+      if neg: T(cast[int64](cast[uint64](origin) - m))
+      else: T(cast[int64](cast[uint64](origin) + m))
 
 proc pickHint[T: SomeInteger](src: ChoiceSource; lo, hi: T; local: openArray[int64];
                               v: var T): bool =
@@ -446,10 +533,16 @@ proc drawInt*[T: SomeInteger](src: ChoiceSource; lo, hi: T; near: openArray[int6
       T(cast[int64](cast[uint64](origin) + src.drawMagnitude(up)))
     elif up == 0:
       T(cast[int64](cast[uint64](origin) - src.drawMagnitude(down)))
-    elif src.drawBool():
-      T(cast[int64](cast[uint64](origin) - (src.drawMagnitude(down - 1) + 1)))
     else:
-      T(cast[int64](cast[uint64](origin) + src.drawMagnitude(up)))
+      var neg: bool
+      let c = drawImpl(src, up + down, (block:
+        # Bit 63 picks the side; the rest of the same bits, the magnitude.
+        let r = src.rng.next()
+        let n = (r shr 63) == 1
+        zigzag(up, down, n, src.proposeFrom(r, if n: down else: up))))
+      let m = unzigzag(up, down, c, neg)
+      if neg: T(cast[int64](cast[uint64](origin) - m))
+      else: T(cast[int64](cast[uint64](origin) + m))
 
 # -------------------------------------------------------------------- floats
 
@@ -567,7 +660,12 @@ proc more*(src: ChoiceSource; m: var Many): bool =
   if m.count >= m.maxLen:
     m.elemStart = -1
     return false
-  let v = drawImpl(src, 1, (if m.count < m.target: 1'u64 else: 0'u64))
+  # Past a forced prefix (targeted exploration), a collection that already
+  # reached its target length keeps growing now and then: extending the
+  # promising case (a longer command sequence) is the point.
+  let v = drawImpl(src, 1, (if m.count < m.target: 1'u64
+                            elif src.forced > 0 and (src.rng.next() and 7) != 0: 1'u64
+                            else: 0'u64))
   if v == 1:
     inc m.count
     result = true
@@ -580,6 +678,8 @@ proc endElement*(src: ChoiceSource; m: var Many) {.inline.} =
   if m.elemStart >= 0:
     src.addSpan(m.elemStart, src.count)
     m.elemStart = -1
+
+{.pop.}
 
 proc assume*(cond: bool) =
   ## Discards the current case when `cond` is false (A2).

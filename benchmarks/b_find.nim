@@ -108,7 +108,8 @@ proc called(m: var BModel; ok: bool) =
       m.openedAt = m.now
       inc m.level
 
-template breakerMachine(name: untyped; boundaryBug, capBug: bool; maxWait: int) =
+template breakerMachine(name: untyped; boundaryBug, capBug: bool; maxWait: int;
+                        targeted = false) =
   stateMachine name:
     model: BModel()
     setup:
@@ -125,9 +126,15 @@ template breakerMachine(name: untyped; boundaryBug, capBug: bool; maxWait: int) 
     command advance(ms in ints(0, maxWait)):
       run: clock.ms += ms
       update: model.now += ms
+    invariant:
+      when targeted:
+        target(float(model.level), "reopenings")      # ADR-0016
+      else:
+        discard
 
 breakerMachine(BreakerBoundary, true, false, 2000)
 breakerMachine(BreakerCap, false, true, 3000)
+breakerMachine(BreakerCapTargeted, false, true, 3000, targeted = true)
 
 type
   Queue = ref object
@@ -215,6 +222,8 @@ let rows: seq[Row] = @[
     stateMachineResult(BreakerBoundary, s(seed))),
   ("breaker: backoff cap (5 reopenings)", proc(seed: uint64): PropertyResult =
     stateMachineResult(BreakerCap, s(seed))),
+  ("breaker: backoff cap, target(level)", proc(seed: uint64): PropertyResult =
+    stateMachineResult(BreakerCapTargeted, s(seed))),
   ("12 increments without reset", proc(seed: uint64): PropertyResult =
     stateMachineResult(NoReset, s(seed))),
 ]

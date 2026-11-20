@@ -85,6 +85,7 @@ type
     labeledCases*: int         ## Cases the label percentages refer to (discards excluded).
     lengthHist*: array[8, int] ## Stateful: sequence lengths 0, 1, 2-3, 4-7, ... 64+.
     warnings*: seq[string]     ## Health checks and coverage notes (RL11, O4).
+    targets*: seq[tuple[label: string, best: float]] ## Best `target` score per name (ADR-0016).
     verbosity*: Verbosity
 
   PropertyProc* = proc(src: ChoiceSource) {.closure.}
@@ -190,6 +191,12 @@ proc checkCoverage(r: var PropertyResult) =
 
 # ----------------------------------------------------------------- execution
 
+# The run loop executes once per case and per shrink step: no stack or line
+# traces in its own frames. A failure's stack trace is captured when the
+# exception is raised, from the frames of the property and the code under
+# test, which keep theirs (library frames are skipped by signatures anyway).
+{.push stackTrace: off, lineTrace: off.}
+
 proc classify(src: ChoiceSource; e: ref Exception; r: var CaseResult) =
   if src.phase == cpGenerate:
     r.outcome = ocGenError
@@ -242,9 +249,12 @@ proc echoCase(name: string; n: int; outcome: Outcome; src: ChoiceSource) =
     of ocGenError: "generator error"
   echo "  [", name, "] case ", n, " ", what, ": ", parts.join(", ")
 
-proc sizeFor(s: Settings; caseIndex: int): int {.inline.} =
-  ## Sizes grow from 0 to `maxSize` over the run: simple cases first.
-  if s.cases <= 1: s.maxSize else: (s.maxSize * caseIndex) div (s.cases - 1)
+proc sizeFor(s: Settings; attempt: int): int {.inline.} =
+  ## Sizes grow from 0 to `maxSize` over the run: simple cases first. Every
+  ## attempt counts, discarded ones included, so a property that discards
+  ## small inputs (`assume(xs.len > 30)`) still reaches larger ones.
+  if s.cases <= 1: s.maxSize
+  else: min(s.maxSize, (s.maxSize * attempt) div (s.cases - 1))
 
 # --------------------------------------------------------- JSON report (O3)
 
@@ -369,6 +379,14 @@ proc toJsonLine*(r: PropertyResult; durationMs = 0.0): string =
       result.addJson("required", st.required)
     result.add '}'
   result.add "],"
+  result.add "\"targets\":["
+  for i, t in r.targets:
+    if i > 0: result.add ','
+    result.add '{'
+    result.addJson("label", t.label); result.add ','
+    result.addJson("best", t.best)
+    result.add '}'
+  result.add "],"
   result.addJson("warnings", r.warnings)
   result.add '}'
 
@@ -470,6 +488,8 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
   var nSeen = 0
   var manyDistinct = false
   var timedNs = 0'i64
+  var bests: seq[tuple[label: string, score: float, choices: seq[uint64]]]
+  var nextTarget = 0
   while result.casesRun + failingCases < settings.cases and
         result.failures.len < settings.maxFailures:
     if budgetNs > 0 and (getMonoTime() - started).inNanoseconds > budgetNs:
@@ -477,7 +497,19 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
       result.warnings.add "time budget of " & $settings.timeBudget & " ms reached after " &
         $(result.casesRun + failingCases) & " of " & $settings.cases & " cases"
       break
-    src.startRandom(sizeFor(settings, result.casesRun + failingCases))
+    let size = sizeFor(settings, result.casesRun + failingCases + result.discarded)
+    # Targeted exploration (ADR-0016): once half of the cases ran, every
+    # other case starts from a prefix (at least half) of the best case of a
+    # `target` name, in turn, and explores from there.
+    let attempt = result.casesRun + failingCases + result.discarded
+    if bests.len > 0 and 2 * attempt >= settings.cases and (attempt and 1) == 1:
+      let b = addr bests[nextTarget mod bests.len]
+      inc nextTarget
+      let n = b.choices.len
+      let keep = if n <= 1: n else: n div 2 + int(src.nextRandom() mod uint64(n - n div 2))
+      src.startExtend(b.choices, keep, size)
+    else:
+      src.startRandom(size)
     inc caseNumber
     src.recordInputs = verbose
     src.timing = (caseNumber and 7) == 0 and hcSlowGeneration notin settings.suppress
@@ -500,6 +532,17 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
     case r.outcome
     of ocPass:
       inc result.casesRun
+      # Keep the best case per `target` name; copying only on improvement.
+      for (label, score) in src.caseTargets:
+        var found = false
+        for b in bests.mitems:
+          if b.label == label:
+            found = true
+            if score > b.score:
+              b.score = score
+              b.choices = src.choices
+        if not found:
+          bests.add (label, score, src.choices)
     of ocDiscard, ocOverrun:
       src.discardLabels()
       inc result.discarded
@@ -511,7 +554,8 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
           $result.discarded & " cases discarded (" & $result.filterDiscards &
           " by filters, " & $result.overruns & " too large)"
         if result.filterDiscards * 2 > result.discarded:
-          result.message.add ". Most discards come from `filter`: generate valid values directly instead."
+          result.message.add ". Most discards come from `filter` or `uniqueSeqs` rejecting " &
+            "values: generate valid values directly, or widen the generator."
         return
     of ocGenError:
       result.status = psGeneratorError
@@ -534,6 +578,7 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
     result.warnings.add "generating inputs takes " & $(src.genNs * 100 div timedNs) &
       "% of the run time: prefer constructive generators to `filter`, or smaller sizes"
   result.labels = src.labelStats
+  for b in bests: result.targets.add (b.label, b.score)
   result.labeledCases = result.casesRun + failingCases
   result.lengthHist = src.lengthHist
   if result.failures.len == 0:
@@ -599,3 +644,5 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
     if reproduced: anyReal = true
     else: f.flaky = true
   result.status = if anyReal: psFailed else: psFlaky
+
+{.pop.}

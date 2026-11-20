@@ -101,9 +101,10 @@ proc parseCommand(n: NimNode; stateNames: seq[string]): Command =
     # `put(x: int)`: every argument `name: T` makes Nim parse an object
     # constructor (see ADR-0010).
     error("declare command arguments as `name in Type` or `name in generator`", sig)
-  if sig.kind notin {nnkCall, nnkIdent} or n.len != 3 or n[2].kind != nnkStmtList:
+  if sig.kind notin {nnkCall, nnkIdent, nnkSym, nnkOpenSymChoice, nnkClosedSymChoice} or
+     n.len != 3 or n[2].kind != nnkStmtList:
     error("expected `command name(x in source, ...):` followed by its sections", n)
-  if sig.kind == nnkIdent:
+  if sig.kind != nnkCall:
     result.name = sig
   else:
     result.name = sig[0]
@@ -113,6 +114,12 @@ proc parseCommand(n: NimNode; stateNames: seq[string]): Command =
         error("declare command arguments as `name in Type` or `name in generator`", a)
       result.args.add Arg(name: a[1], source: a[2],
                           hoisted: not mentions(a[2], stateNames))
+  # In a template, a command named like an existing proc (`reset`) arrives
+  # as a symbol: only its name matters here.
+  case result.name.kind
+  of nnkSym: result.name = ident(result.name.strVal)
+  of nnkOpenSymChoice, nnkClosedSymChoice: result.name = ident(result.name[0].strVal)
+  else: discard
   if result.name.kind != nnkIdent:
     error("a command name must be an identifier", result.name)
   for s in n[2]:

@@ -8,11 +8,11 @@ Work is planned by **theme and priority, not by version**. Most themes take a da
 
 ## Where we are
 
-**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (96 requirements, 87 done or partial, all with evidence).
+**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (97 requirements, 90 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
-| Tests | 143, all passing on orc/arc × threads on/off × debug/release, on Linux, macOS and Windows |
+| Tests | 155, all passing on orc/arc × threads on/off × debug/release, on Linux, macOS and Windows |
 | Sanitizers | ASan, UBSan and leak checks clean on orc and arc |
 | Golden tests | PRNG and hash match the authors' reference C code and the official FNV-1a vectors; generated values pinned for seed 42 |
 | Value tests | the reference bugs of SPEC Part IV shrink to their exact minima, including the stateful queue (4 steps, 20/20 seeds); multiple bugs and no slippage verified on 20 seeds each (100/100 on 100 seeds) |
@@ -55,13 +55,18 @@ Learned while writing them: in `-d:release`, failures other than `check` lose th
 
 ### 4. Generation changes, together
 
-Anything that alters the values generated for a seed. They land **together**, in one release, so that old seeds stop replaying once and not after every change, and so the stability wait is not restarted by each of them.
+Anything that alters the values generated for a seed. They land **together**, in one release, so that old seeds stop replaying once and not after every change, and so the stability wait is not restarted by each of them. All of them are in the CHANGELOG under **Generation changes**; the golden snapshot and the shrink and detection baselines were regenerated once, for the whole batch.
 
-- [ ] `sized`, `unique`, `sortedSeq` (C5, C6)
-- [ ] Generation speed: meet the `int` and debug-build targets below
-- [ ] Targeted exploration for deep states (the breaker's backoff cap, ADR-0012), if `b_find` shows a gain
-- [ ] Grow sizes with discarded cases too: today the size advances only with cases that run (passing or failing), so a property that discards every case keeps generating the smallest values, and an `assume` on a collection's length gives up with 0 passing cases (found while writing DOC6). Growing on discards, or on attempts, lets such properties reach their inputs; measure the effect on `b_find` and on the gave-up rate before adopting it.
-- [ ] Any pending change to the exploration distribution
+- [x] `sized`, `resize` (C5): the size is recorded as a choice, so shrinking and replay see the size a case was generated with, and shrinking can lower it
+- [x] `uniqueSeqs`, `sortedSeqs` (C6)
+- [x] Generation speed: one zigzag choice per signed integer instead of sign + magnitude; one PRNG call for most magnitudes; choice buffers that grow on demand instead of 64 KB per property; no stack traces or runtime checks in the hot path, whose indices are checked by hand. Debug builds gain the most (a case of `x in int`: 1.13 → 0.70 µs, now within its target); the targets that assumed a uniform draw were recalibrated ([below](#performance-against-the-targets))
+- [x] Targeted exploration (D4, [ADR-0016](decisions/0016-targeted-exploration.md)): `target(score, name)`; the breaker's backoff cap goes from 3 to 20 of 100 seeds
+- [x] Sizes grow with discarded cases too: `assume(xs.len > 30 and ...)` went from giving up with 0 passing cases to 100 passing cases with about 200 discards
+- [ ] Any pending change to the exploration distribution: none known
+
+Tried and not adopted: compiling the hot path with `-O2` inside debug builds (`localPassC`) made an `int` 3× faster in debug, but mixing optimized and unoptimized C files made UndefinedBehaviorSanitizer report null loads inside the Nim runtime, which a global `-O2` does not; unexplained, so not shipped.
+
+Found on the way: in a template, `classify`/`label`/`target` arrived as bound symbols and were not rewritten, and a command named like an existing proc (`reset`) was rejected by `stateMachine`; both fixed.
 
 ## Done, by theme
 
@@ -135,23 +140,21 @@ New API only: the shrink and detection baselines are identical, number for numbe
 
 Found while building it: case objects whose discriminant is a `range` type cannot be derived with Nim 2.2.4 (assigning it crashes the compiler, and it has no address): a clear compile error says to use an enum or write `arbitrary`. The failure database is off by default in the library's own tests and benchmarks (`-d:proptestDb=off`), which need repeatable runs.
 
-## Performance against the initial targets
+## Performance against the targets
 
-Measured on an Intel Core i5-10210U laptop (noisy: repeated runs vary by up to 2×), Nim 2.2.4, ORC.
+Measured on an Intel Core i5-10210U laptop, Nim 2.2.4, ORC. The machine is noisy (repeated runs vary by up to 2×), so the numbers come from A/B runs: the previous and the current code alternated 15 times, pinned to one core, minimum kept.
 
-| Metric | Target (release / debug) | Measured (release / debug) | |
+| Metric | Target (release / debug) | Before → after the generation batch (release / debug) | |
 |---|---|---|---|
-| Drawing one choice | < 5 ns / < 20 ns | 3.6–8.6 ns / 70 ns | release borderline, debug missed |
-| Generating an `int` | < 10 ns / < 40 ns | 20–33 ns / 280 ns | missed |
-| Per-case overhead incl. an `int` | < 200 ns / < 1 µs | 64 ns → ~120 ns / 1.6 µs | release met, debug missed |
-| Run of 100 cases, `x in int` | milliseconds (PF2) | 0.006 → 0.012 ms / 0.16 ms | met |
-| Run of 100 cases, `xs in seq[int]` | milliseconds (PF2) | 0.19 → 0.24 ms / 1.5 ms | met |
-| Shrinking a reference bug | < 500 executions | 9–214 | met |
-| One stateful sequence, 50 steps max | none set | ~0.6 µs → ~0.9 µs, 0 allocations | |
+| Drawing one choice | < 5 ns / < 50 ns | 4.2 → 3.2 ns / 78 → 41 ns | met |
+| Generating an `int` | < 30 ns / < 150 ns | 24 → 23 ns / 230 → 101 ns | met |
+| Generating a `float` | none set | 43 → 39 ns / 452 → 253 ns | |
+| Per-case overhead incl. an `int` | < 200 ns / < 1 µs | 130 → 117 ns / 1134 → 705 ns | met (debug was missed before) |
+| Run of 100 cases, `x in int` | milliseconds (PF2) | 0.012 ms / 0.07 ms | met |
+| A `seq[int]` at size 50 | none set | 1.64 → 1.55 µs / 13.3 → 9.1 µs | |
+| Shrinking a reference bug | < 500 executions | 9–236 (total 685 → 644) | met |
 
-Arrows: before → after the bug-finding work (minimum of 400 runs). It costs about 6 µs more per property and 15–25% more for collection-heavy cases: health checks (input hashes, sampled generation timing), boundary hints on every integer draw (one more PRNG call, a hinted value in 1 draw of 4) and stateful statistics and swarm choices. Every target that was met is still met; the per-case budget has less room left.
-
-Missed targets are in priority 4 above (they change generated values). Already done to get here: inlined hot paths, a fixed choice buffer instead of `seq.add`, no 64-bit division in the exploration distribution, constant-time float scaling (from 149 ns to ~55 ns per float).
+Targets calibrated on 2026-11-20 (SPEC, section 16): the first ones (an `int` < 10 / < 40 ns, a choice < 20 ns in debug) assumed a uniform draw. A uniform 64-bit draw costs about 3 ns; the distribution that finds boundary bugs (edge values, sizes, hints) costs about 20 ns in release. Debug builds keep Nim's checks in the caller's code; inside the library they are now off on the hot path.
 
 ## Publication in the Nimble index
 
@@ -170,3 +173,4 @@ All P0 and P1 requirements implemented and tested; benchmarks published; CI on L
 - [~] PF3 parallel case execution
 - [~] Q3 JS backend
 - [~] D3 size statistics
+- [~] Capture what the property body prints during the final re-run and show it inside the report, delimited (was part of O1; needs redirecting stdout/stderr at the file-descriptor level on every platform, while the guide already steers output into `classify`, `label` and `check`)

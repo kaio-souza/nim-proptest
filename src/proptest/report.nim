@@ -84,6 +84,14 @@ proc formatStats*(r: PropertyResult; withStateful: bool): string =
     if lengths.len > 0:
       result.add "  Sequence lengths: " & lengths.join(", ") & "\n"
 
+proc formatTargets(r: PropertyResult): string =
+  ## Best score per `target` name (ADR-0016).
+  if r.targets.len > 0:
+    result.add "  Targets (best score while exploring):\n"
+    for t in r.targets:
+      result.add "    " & formatFloat(t.best, ffDecimal, 1).align(10) & "  " &
+        (if t.label.len > 0: t.label else: "(unnamed)") & "\n"
+
 proc formatWarnings(r: PropertyResult): string =
   if r.warnings.len > 0:
     result.add "  Warnings:\n"
@@ -99,6 +107,7 @@ proc formatNotes*(r: PropertyResult): string =
     if st.kind in {lkClassify, lkCover, lkLabel}: hasUser = true
   var body = ""
   if hasUser or verbose: body.add formatStats(r, withStateful = verbose)
+  body.add formatTargets(r)
   body.add formatWarnings(r)
   if body.len > 0:
     result = "Property '" & r.name & "' passed " & $r.casesRun & " cases.\n" & body
@@ -128,5 +137,6 @@ proc formatReport*(r: PropertyResult): string =
       result.add formatFailure(f, i + 1, r.failures.len)
     if r.verbosity >= vNormal:
       result.add formatStats(r, withStateful = r.verbosity >= vVerbose)
+      result.add formatTargets(r)
   if r.status != psPassed: result.add formatWarnings(r)
   result.add "  " & replayLine(r)

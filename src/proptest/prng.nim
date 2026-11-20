@@ -7,6 +7,10 @@
 
 import std/bitops
 
+# Called for every choice: no stack or line traces (they only locate failures
+# in user code), and the arithmetic is unsigned, so there is nothing to check.
+{.push stackTrace: off, lineTrace: off.}
+
 type
   Xoshiro256* = object
     ## xoshiro256** generator (Blackman and Vigna).
@@ -64,3 +68,5 @@ proc deriveSeed*(runSeed: uint64; key: string): uint64 =
   ## Independent stream seed for `key` (a property name) within a run (R5).
   var st = runSeed xor fnv1a64(key)
   splitMix64(st)
+
+{.pop.}

@@ -8,10 +8,16 @@
 ## - `Gen[T]`: a value built with combinators (`ints`, `map`, `filter`...),
 ##   created once per property and shared by every case.
 
-import std/[options, macros, typetraits, tables, sets, unicode]
+import std/[options, macros, typetraits, tables, sets, unicode, algorithm]
 import choices
 
 export options, tables, sets
+
+# Generators run for every case: no stack or line traces in their frames (they
+# only locate failures in user code, and failure signatures skip library
+# frames). Index and range checks stay on; user procs passed to combinators
+# keep their own traces.
+{.push stackTrace: off, lineTrace: off.}
 
 # ------------------------------------------------------- type-inferred (G2/G3)
 
@@ -372,7 +378,63 @@ proc seqs*[T](g: Gen[T]; minLen = 0; maxLen = high(int)): Gen[seq[T]] =
     while src.more(m):
       result.add g.run(src))
 
+proc uniqueSeqs*[T](g: Gen[T]; minLen = 0; maxLen = high(int);
+                   maxTries = 100): Gen[seq[T]] =
+  ## Sequences of distinct values from `g` (C6), compared with `==`. An
+  ## element equal to an earlier one is drawn again, up to `maxTries` times;
+  ## then the case is discarded, as with `filter`. Shrinks toward fewer and
+  ## simpler elements, which stay distinct.
+  if minLen < 0 or maxLen < minLen:
+    raise newException(ValueError, "uniqueSeqs: invalid lengths")
+  if maxTries < 1: raise newException(ValueError, "uniqueSeqs: maxTries < 1")
+  newGen(proc(src: ChoiceSource): seq[T] =
+    var m = src.initMany(minLen, maxLen)
+    when compiles(initHashSet[T]()):
+      var seen = initHashSet[T]()
+    while src.more(m):
+      var tries = 0
+      while true:
+        let v = g.run(src)
+        let dup = (when compiles(initHashSet[T]()): seen.containsOrIncl(v)
+                   else: v in result)
+        if not dup:
+          result.add v
+          break
+        inc tries
+        if tries >= maxTries:
+          raise newException(FilterExhausted, "uniqueSeqs: " & $maxTries &
+            " duplicates in a row: the generator has too few distinct values"))
+
+proc sortedSeqs*[T](g: Gen[T]; minLen = 0; maxLen = high(int)): Gen[seq[T]] =
+  ## Sequences from `g` in ascending order (C6), by `<`. Shrinks like `seqs`.
+  if minLen < 0 or maxLen < minLen:
+    raise newException(ValueError, "sortedSeqs: invalid lengths")
+  newGen(proc(src: ChoiceSource): seq[T] =
+    var m = src.initMany(minLen, maxLen)
+    while src.more(m):
+      result.add g.run(src)
+    result.sort())
+
+proc sized*[T](f: proc(size: int): Gen[T]): Gen[T] =
+  ## A generator built from the current size (C5): `sized(proc(n: int):
+  ## Gen[seq[int]] = seqs(ints(0, n), maxLen = n))`. The size grows from 0
+  ## to `maxSize` over a run; it is recorded with the case, so shrinking and
+  ## replay see the same size (or a smaller one: shrinking lowers it).
+  newGen(proc(src: ChoiceSource): T = f(src.drawSize()).run(src))
+
+proc resize*[T](g: Gen[T]; size: int): Gen[T] =
+  ## `g` with a fixed size (C5): collections, integers and `sized` inside it
+  ## see `size` instead of the size of the case.
+  if size < 0: raise newException(ValueError, "resize: size < 0")
+  newGen(proc(src: ChoiceSource): T =
+    let outer = src.size
+    src.setSize(size)
+    try: result = g.run(src)
+    finally: src.setSize(outer))
+
 proc optionals*[T](g: Gen[T]): Gen[Option[T]] =
   ## `none` or a value from `g`; shrinks toward `none`.
   newGen(proc(src: ChoiceSource): Option[T] =
     if src.drawBool(0.8): some(g.run(src)) else: none(T))
+
+{.pop.}

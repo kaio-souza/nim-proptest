@@ -19,6 +19,7 @@ Each file records one decision: its context, what was decided, the consequences,
 | [0013](0013-derived-generators.md) | Derived generators for objects, case objects, `distinct`, `ref` and recursive types, via `fieldPairs` | Accepted |
 | [0014](0014-failure-database-and-examples.md) | Failure database (replay past failures first) and explicit examples | Accepted |
 | [0015](0015-stability-policy.md) | Stability policy: generation changes only in minor releases, enforced by a golden snapshot of the whole pipeline | Accepted |
+| [0016](0016-targeted-exploration.md) | Targeted exploration: `target(score)` extends the best case so far, for deep states | Accepted |
 
 ## Template
 

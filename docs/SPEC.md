@@ -66,7 +66,7 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 | C3 | P1 | `frequency` (weighted choice). |
 | C4 | P1 | `recursive` for tree-shaped data with a depth bound. |
 | C5 | P1 | `sized` (access the current size), `resize`. |
-| C6 | P1 | `unique` collections and `sortedSeq`. |
+| C6 | P1 | Collections of distinct values and sorted collections: `uniqueSeqs`, `sortedSeqs`. |
 | C7 | P1 | Custom generators written as ordinary procs over the choice source, without implementing a shrinker. |
 
 ## 7. Shrinking (S)
@@ -121,12 +121,13 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 | D1 | P1 | `classify` / `label`: tag cases and print the distribution at the end of the run. |
 | D2 | P1 | `cover(percent, cond, label)`: fail the property when a required class of inputs was generated too rarely. |
 | D3 | P2 | Summary of generated value sizes, to detect generators that never produce large inputs. |
+| D4 | P1 | **Targeted exploration**: `target(score, name)` in a property or state machine steers part of the exploration toward cases with higher scores, to reach deep states that random cases rarely reach; the best score per name is reported ([ADR-0016](decisions/0016-targeted-exploration.md)). |
 
 ## 11a. Output and reporting (O)
 
 | ID | Pri | Requirement |
 |----|-----|-------------|
-| O1 | P0 | **Quiet exploration**: the library prints nothing per case or per shrink step by default; only the final report. Output written by the property body during the final re-run (RL3) is shown inside the report, clearly delimited. |
+| O1 | P0 | **Quiet exploration**: the library prints nothing per case or per shrink step by default; only the final report. Output written by the property body itself is not captured: it appears once per execution, so the documentation steers it into `classify`/`label` and the `check` message instead. (Capturing the body's output during the final re-run and showing it inside the report was part of this requirement until 2026-11-20; it is deferred, see the ROADMAP.) |
 | O2 | P1 | Verbosity levels: `quiet` (failures only), `normal` (default), `verbose` (every case), `debug` (every shrink step). |
 | O3 | P1 | Machine-readable report (JSON) for CI tooling, enabled by configuration or environment variable. |
 | O4 | P1 | The report includes the statistics (D1), coverage results (D2) and health-check warnings (RL11). |
@@ -195,7 +196,7 @@ Properties should be cheap enough to run on every save, next to unit tests. Init
 | PF9 | P1 | **Compile-time cost**: a benchmark measures the compile time of a test file with 50 properties and derived object generators, with a budget. |
 | PF10 | P1 | **Lazy formatting**: values are converted to strings only for the final report; `classify` with static labels does not allocate per case. |
 
-Initial targets (release / debug; measured values in [`ROADMAP.md`](ROADMAP.md#performance-against-the-initial-targets)): drawing one choice < 5 ns / < 20 ns; generating an `int` < 10 ns / < 40 ns; per-case overhead excluding the body < 200 ns / < 1 µs; each reference bug shrunk to its minimal counterexample in < 500 property executions.
+Targets (release / debug; measured values in [`ROADMAP.md`](ROADMAP.md#performance-against-the-targets)): drawing one choice < 5 ns / < 50 ns; generating an `int` < 30 ns / < 150 ns; per-case overhead excluding the body < 200 ns / < 1 µs; each reference bug shrunk to its minimal counterexample in < 500 property executions. Calibrated on 2026-11-20 from the first targets (one choice < 20 ns in debug; an `int` < 10 / < 40 ns), which assumed a uniform draw: a uniform 64-bit draw costs about 3 ns, but the distribution that finds boundary bugs (edges, sizes, hints) costs about 20 ns in release, and debug builds pay for Nim's runtime checks in the caller's code. The per-case targets, which decide how fast a suite runs, are unchanged and met.
 
 ## 17. Portability and quality (Q)
 
