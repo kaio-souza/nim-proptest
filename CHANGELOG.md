@@ -1,11 +1,25 @@
 # Changelog
 
-All notable changes. Versions follow semantic versioning. Any change to the values generated for a given seed is listed under **Generation changes** (see the stability policy, SPEC RL15).
+All notable changes. Versions follow semantic versioning. Any change to the values generated for a given seed is listed under **Generation changes**, and happens only in a minor release ([stability policy](docs/STABILITY.md)).
 
 ## Unreleased
 
 Everything since the last tag (v0.2.0). Work is grouped by theme, not by
 version: a release is cut when it is worth one, not per theme.
+
+### Trust over time
+
+#### Added
+- Stability policy (`docs/STABILITY.md`, ADR-0015): within a minor version
+  the same seed gives the same values, exploration, stateful sequences and
+  counterexample; generation changes only in minor releases, under
+  "Generation changes". Says what is not covered (text report, warnings,
+  time-dependent behavior) and what to do when upgrading.
+- Golden snapshot of the whole pipeline (`tests/t_golden.nim`): 51
+  properties (every type and combinator, derived types, mined constants,
+  edge bias, sizes, a state machine, shrinking, the failure database file),
+  checked on every CI job. `nimble golden` rewrites it for an intended
+  generation change.
 
 ### Learning it alone
 

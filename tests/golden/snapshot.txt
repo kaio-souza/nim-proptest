@@ -1,0 +1,419 @@
+# proptest golden snapshot: run seed 2026
+# Regenerate with `nimble golden`; a change is a generation change (docs/STABILITY.md).
+
+## int
+status=psPassed cases=100 discarded=0 values=100 hash=BDFC354D764C7EEA
+  [0] 1
+  [19] -6
+  [39] -2
+  [59] 0
+  [79] -28
+  [99] -79
+## int8
+status=psPassed cases=100 discarded=0 values=100 hash=414A909E67B5730C
+  [0] 1
+  [19] 127
+  [39] -128
+  [59] -34
+  [79] 1
+  [99] -57
+## uint64
+status=psPassed cases=100 discarded=0 values=100 hash=715C5D5EC50B9BAD
+  [0] 0
+  [19] 1
+  [39] 15
+  [59] 17
+  [79] 9013
+  [99] 81
+## range
+status=psPassed cases=100 discarded=0 values=100 hash=066DD307B73D415D
+  [0] -1
+  [19] -5
+  [39] 5
+  [59] -3
+  [79] -1
+  [99] 0
+## float
+status=psPassed cases=100 discarded=0 values=100 hash=FDBA91A4A62C70D6
+  [0] 1.0
+  [19] 1.83270263671875
+  [39] 2.220446049250313e-16
+  [59] 6900157.928689003
+  [79] inf
+  [99] 5e-324
+## float32
+status=psPassed cases=100 discarded=0 values=100 hash=998E0068684A8680
+  [0] -9.007199e+15
+  [19] -17.0
+  [39] -9.007199e+15
+  [59] -9.007199e+15
+  [79] -4.117768e+11
+  [99] -31.0
+## bool
+status=psPassed cases=100 discarded=0 values=100 hash=C4F25643A9C366B5
+  [0] true
+  [19] true
+  [39] false
+  [59] true
+  [79] true
+  [99] false
+## char
+status=psPassed cases=100 discarded=0 values=100 hash=438BFB10783D7752
+  [0] '\xA1'
+  [19] 'j'
+  [39] '\xD9'
+  [59] 's'
+  [79] '\xAC'
+  [99] '\x06'
+## string
+status=psPassed cases=100 discarded=0 values=100 hash=3FF0EEC917993A00
+  [0] "8f"
+  [19] "S"
+  [39] "G.i8\"/R)5ErBVFTp53xbYO2"
+  [59] "2"
+  [79] "&AJfwqf>d3UXo <&wq\"5x~[I$8rFbtq71,#tZ[C0kEzu%e^SEKdE3}Qav_CuY?sPk!0i0$9>;p/Q}#/Lis<rP:f8urG<2e:Y*D...
+  [99] "9``&R9|7}|{|rF$!R|.c0Qcq?\"Xb4t:S!y)B{UV4;Bzu4w?IO<idU5Tv4K:G[k`fshx%/j~Cfdr@)G&5T2g~kA,Qk6^p/f]MIs...
+## enum
+status=psPassed cases=100 discarded=0 values=100 hash=A4AEB65AC851E303
+  [0] red
+  [19] blue
+  [39] red
+  [59] blue
+  [79] red
+  [99] blue
+## seq[int]
+status=psPassed cases=100 discarded=0 values=100 hash=A9711D442C0D53A1
+  [0] @[-2, 1]
+  [19] @[406, 1869]
+  [39] @[384, -80, 9223372036854775807, 14]
+  [59] @[-34, -9223372036854775808, -28, -147, -48, 0, -148140, 16, -25224140877, 39, 35, -1, 53, 214500583...
+  [79] @[-23, -71, -272, 40, -9223372036854775808, -29, -11362991, 2297903, 990478073843, -28, -1, -65, -24...
+  [99] @[423, -17, 28, -134907144481683, 15938921, -1, -2, 9223372036854775807, -659167155715, -9, -26345, ...
+## seq[seq[int8]]
+status=psPassed cases=100 discarded=44 values=100 hash=39EA03D3254005B3
+  [0] @[]
+  [19] @[]
+  [39] @[@[-20], @[-46, 1, 19, -40, 127, -4, 0, 2, 0, -40, -128, -92, -77, 24, -1, 63, -128, -128, -50, 46,...
+  [59] @[@[77, -87, -60, 0, 99, -2, -8, 0, 42, 66, -53, 59, 94, -9, -3, -90, 46, 1, -34, -2, 1, 122, 37, 26...
+  [79] @[@[127], @[64, 94, -62, -8, 123, -3, -69, 1, 0, -38, -23, -61, 33, 6, -66, -34, -108, -69, -40, -29...
+  [99] @[@[-128, -2, 120, -51, 73, 25, -7, -2, -15, 23, 52, -96, 81, -58, 33, 1, -128, -1, 1, 55, 127, 96, ...
+## array
+status=psPassed cases=100 discarded=0 values=100 hash=2976935629C17793
+  [0] [0, 255, 1]
+  [19] [255, 0, 103]
+  [39] [9, 20, 18]
+  [59] [28, 1, 8]
+  [79] [57, 0, 255]
+  [99] [241, 0, 53]
+## set
+status=psPassed cases=100 discarded=0 values=100 hash=FDBE48842F3638BF
+  [0] {green}
+  [19] {red, green, blue}
+  [39] {red, green, blue}
+  [59] {red}
+  [79] {red, green, blue}
+  [99] {red, green, blue}
+## Option
+status=psPassed cases=100 discarded=0 values=100 hash=B18AF43F73BAD520
+  [0] none(int16)
+  [19] none(int16)
+  [39] some(21842)
+  [59] some(-59)
+  [79] some(-33)
+  [99] none(int16)
+## tuple
+status=psPassed cases=100 discarded=0 values=100 hash=41DA7B5786586583
+  [0] (a: 0, b: true)
+  [19] (a: 11, b: false)
+  [39] (a: 127, b: false)
+  [59] (a: 53, b: true)
+  [79] (a: 109, b: true)
+  [99] (a: -1, b: true)
+## Table
+status=psPassed cases=100 discarded=45 values=100 hash=FA037815DDA6935B
+  [0] {-2: "MB"}
+  [19] {7: "G", -6: "#", -128: "=ss7Gb`-sT }^,8XYvQd_", 127: ".\'1H8fv", 12: "j;bcqi>&s},cHmQ*BJu$YDA@x/a=o...
+  [39] {0: "3"}
+  [59] {-41: "AMN;MO1KN7MlyLao!|H/iOJj{6/x<^G9M@SgK}rnJ(.}rM*#Zw\"8GrwS|;S\\\"/p\'_iw_?Zh &]9]6 !dgKsXVnUWl...
+  [79] {:}
+  [99] {68: "fYReN,0^P<KUT)_Z0#}Iu\'4s4s@Sl_GK?Jf]|ZSg.|f`.+!g$rZRg {i2p_y#:(ahznnRI&{{KB=D2]? h((J"}
+## OrderedTable
+status=psPassed cases=100 discarded=0 values=100 hash=32F338144ECB5D69
+  [0] {green: -9223372036854775808}
+  [19] {blue: -5, green: 3, red: -7}
+  [39] {red: 23, blue: -22, green: -123639}
+  [59] {red: 0, green: 9223372036854775807, blue: 1599946}
+  [79] {blue: 9223372036854775807}
+  [99] {red: 9223372036854775807, blue: 9223372036854775807, green: 1}
+## HashSet
+status=psPassed cases=100 discarded=0 values=100 hash=A7D488EDB7528578
+  [0] {0, -1}
+  [19] {-1}
+  [39] {26453, 26761, -8471, 31618, 4, -12, -16655, -737, -24, 11, -20121, -16036, -821, 3, -29037, 29, -39...
+  [59] {}
+  [79] {-30640, -15762, -2, 19140, -2130, -26, -32768, 81, -3239, 5448, 23029, 30403}
+  [99] {-8233, 4533, -100, 65, 390, -81, 3330, -46, -5322, 20087, 82, 8437, -3605, 663, 26, -25, 76, 89, -7...
+## object, private fields, other module
+status=psPassed cases=100 discarded=0 values=100 hash=C7ACFB89E1F1B2B8
+  [0] (owner: "+", cents: -1)
+  [19] (owner: "=dLS~&Kp2MS.", cents: -9223372036854775808)
+  [39] (owner: "C", cents: 105)
+  [59] (owner: "`|b:>+u! ", cents: 16751081)
+  [79] (owner: "oGfv^", cents: 9223372036854775807)
+  [99] (owner: "C73NWkXtxLWE0,Xt@e`<L>\"m,7@!!wG4eB=9X:`Ez4vL~b}q^a8sHdyyY99@kL\\5$\'u$+F<0z H[OYe0dorWO", ...
+## case object
+status=psPassed cases=100 discarded=0 values=100 hash=1DE672B31C447962
+  [0] (name: "8", kind: tri, a: 0, b: 0, c: 255)
+  [19] (name: ")l=UfT$E|@%aZRV]1", kind: tri, a: 30, b: 18, c: 151)
+  [39] (name: "H", kind: rect, w: 10, h: 17)
+  [59] (name: "-", kind: circle, r: -9223372036854775808)
+  [79] (name: "h@3uq\\X]*_MV$~|1?h]o=,-sQ/v", kind: tri, a: 255, b: 128, c: 137)
+  [99] (name: "_V`4lWhf#|al>3JS0n\"Ru++|?50.ZjYy&&^$MKjQi<*+R}j", kind: tri, a: 19, b: 54, c: 230)
+## distinct
+status=psPassed cases=100 discarded=0 values=100 hash=CF5005EAE83E8B91
+  [0] 9223372036854775807C
+  [19] -4C
+  [39] 9223372036854775807C
+  [59] -18C
+  [79] 1C
+  [99] -52C
+## recursive ref
+status=psPassed cases=100 discarded=0 values=100 hash=CB43366ADE03AF36
+  [0] Node(val: -2, kids: @[nil])
+  [19] nil
+  [39] Node(val: -13, kids: @[Node(val: -9223372036854775808, kids: @[]), Node(val: -9223372036854775808, k...
+  [59] Node(val: -15507, kids: @[nil, Node(val: 132465204792, kids: @[nil, nil, nil, nil, nil]), Node(val: ...
+  [79] nil
+  [99] Node(val: 2541361975727, kids: @[])
+## ints(lo, hi)
+status=psPassed cases=100 discarded=0 values=100 hash=735A334FB55977E9
+  [0] 0
+  [19] -3
+  [39] 0
+  [59] 974
+  [79] 34
+  [99] 93
+## ints near
+status=psPassed cases=100 discarded=0 values=100 hash=129DC233EC7E7C50
+  [0] 0
+  [19] 65536
+  [39] 9
+  [59] 484242
+  [79] 68
+  [99] 17
+## floats(lo, hi)
+status=psPassed cases=100 discarded=0 values=100 hash=618729C94C07CD84
+  [0] 0.9118566469916861
+  [19] -0.24504423106495646
+  [39] 0.5661208604623459
+  [59] -1.0
+  [79] -1.0
+  [99] 0.05161279170767475
+## floats finite
+status=psPassed cases=100 discarded=0 values=100 hash=4E207A87BB62DB40
+  [0] -0.0
+  [19] 0.8929100036621094
+  [39] 32.0
+  [59] 1087207910.8679972
+  [79] 4.146932726168885e+245
+  [99] 1.7976931348623157e+308
+## chars
+status=psPassed cases=100 discarded=0 values=100 hash=75A06E2F81B3187B
+  [0] 'c'
+  [19] 'a'
+  [39] 'b'
+  [59] 'c'
+  [79] 'c'
+  [99] 'c'
+## strings
+status=psPassed cases=100 discarded=0 values=100 hash=96633081BCB49003
+  [0] "z"
+  [19] "zyz"
+  [39] "yyzxy"
+  [59] "z"
+  [79] "yxxyxzyx"
+  [99] "xxzz"
+## seqs
+status=psPassed cases=100 discarded=0 values=100 hash=A39F8A918B3FA8FF
+  [0] @[0, 1, 1]
+  [19] @[1, 3, 0]
+  [39] @[1, 7, 4]
+  [59] @[6, 5, 5, 0, 6]
+  [79] @[2, 0, 4]
+  [99] @[1, 4]
+## map
+status=psPassed cases=100 discarded=0 values=100 hash=19B968DC784028E0
+  [0] "2"
+  [19] "2"
+  [39] "0"
+  [59] "102"
+  [79] "10"
+  [99] "158"
+## filter
+status=psPassed cases=100 discarded=0 values=100 hash=D4E26324AF444C30
+  [0] 0
+  [19] 9
+  [39] 606
+  [59] 0
+  [79] 0
+  [99] 852
+## flatMap
+status=psPassed cases=100 discarded=0 values=100 hash=0D2D1299588725CA
+  [0] @[0]
+  [19] @[9, 2, 5]
+  [39] @[7, 1]
+  [59] @[0, 9, 7, 0]
+  [79] @[4, 1, 6, 3]
+  [99] @[0, 0, 1]
+## elements
+status=psPassed cases=100 discarded=0 values=100 hash=DD5BA8C2DD3014E7
+  [0] "b"
+  [19] "c"
+  [39] "b"
+  [59] "c"
+  [79] "b"
+  [99] "b"
+## oneOf
+status=psPassed cases=100 discarded=0 values=100 hash=A0D46B465BE17F13
+  [0] 100
+  [19] 104
+  [39] 100
+  [59] 4
+  [79] 5
+  [99] 3
+## frequency
+status=psPassed cases=100 discarded=0 values=100 hash=4A08877072AD5ABD
+  [0] 2
+  [19] 1
+  [39] 2
+  [59] 5
+  [79] 2
+  [99] 3
+## optionals
+status=psPassed cases=100 discarded=0 values=100 hash=801A2E6DD91D8347
+  [0] some(true)
+  [19] some(true)
+  [39] some(false)
+  [59] some(true)
+  [79] none(bool)
+  [99] some(false)
+## tables
+status=psPassed cases=100 discarded=0 values=100 hash=EF50C8B477D24E78
+  [0] {:}
+  [19] {:}
+  [39] {0: false, 1: false}
+  [59] {5: true, 3: true, 0: true}
+  [79] {:}
+  [99] {:}
+## hashSets
+status=psPassed cases=100 discarded=0 values=100 hash=BC4D716DAF044064
+  [0] {}
+  [19] {}
+  [39] {18}
+  [59] {}
+  [79] {3, 1, 17, 10, 0}
+  [99] {1, 0}
+## alphanumeric
+status=psPassed cases=100 discarded=0 values=100 hash=9F44CE103CDD99A7
+  [0] ""
+  [19] "702guboD"
+  [39] "ccf2D"
+  [59] "f"
+  [79] "HPMf9gEb4m"
+  [99] "IY4aYHq5Szug"
+## identifiers
+status=psPassed cases=100 discarded=0 values=100 hash=20DB8F11E1CAEB6E
+  [0] "z"
+  [19] "p"
+  [39] "koE"
+  [59] "zDBipe8kfO31Qo"
+  [79] "wRkOytQfPd"
+  [99] "Cg"
+## unicodeStrings
+status=psPassed cases=100 discarded=0 values=100 hash=1A23D3B53C20BFE0
+  [0] "I"
+  [19] ""
+  [39] "쨸"
+  [59] ""
+  [79] "笓+萤"
+  [99] "h"
+## recursive
+status=psPassed cases=100 discarded=0 values=100 hash=AEB1089C397DE65F
+  [0] "1"
+  [19] "((9) (((0 (4))) (5)))"
+  [39] "3"
+  [59] "(6)"
+  [79] "5"
+  [99] "7"
+## mined constants (golden_mined.nim)
+status=psPassed cases=100 discarded=0 values=100 hash=568AB1B59FA0DCE1
+  [0] 1000
+  [19] 12
+  [39] 0
+  [59] 999
+  [79] 1144
+  [99] 2000
+## no edge bias
+status=psPassed cases=100 discarded=0 values=100 hash=AEBDA4A75A4613E4
+  [0] 1
+  [19] 10
+  [39] -10
+  [59] 5
+  [79] 19
+  [99] -245634
+## sizes (cases = 20, maxSize = 10)
+status=psPassed cases=20 discarded=0 values=20 hash=1994E0A0EA53E9A6
+  [0] 2
+  [3] 0
+  [7] 5
+  [11] 2
+  [15] 11
+  [19] 14
+## shrink: int boundary
+status=psFailed cases=82 discarded=0 values=179 hash=25652A31A6346F9F
+  [0] 0
+  [35] 0
+  [71] 43
+  [106] 1152921504606846975
+  [142] 16777215
+  [178] 1000
+  counterexample: x=1000  (PropertyFailed, 2 choices)
+## shrink: seq
+status=psFailed cases=53 discarded=0 values=207 hash=B9C72D94808A875E
+  [0] @[]
+  [41] @[1345866, 79, 9223372036854775807, 18, 127, -8, -26, -42, -14, -9223372036854775808, -16, 1009, 640...
+  [82] @[]
+  [123] @[1]
+  [164] @[1]
+  [206] @[0, -1, 0]
+  counterexample: xs=@[0, -1, 0]  (PropertyFailed, 10 choices)
+## shrink: two bugs
+status=psFailed cases=32 discarded=0 values=226 hash=600EDBF0FBCDDAFF
+  [0] 1 "f"
+  [45] 9 "-"
+  [90] 58 "ut%eLCY`Jvot6&|r7_'IfZy[{B+Po3c7SxOvL{5&ykJ)Se+Iqc~AYI>^uKxiS(sD[)g~4b;aKsi/=CFm73P;t\\ !vX0QCP*...
+  [135] 9 "vQa"
+  [180] 0 "a"
+  [225] 0 "aaaa"
+  counterexample: x=51 s=""  (PropertyFailed, 2 choices)
+  counterexample: x=0 s="aaaa"  (PropertyFailed, 10 choices)
+## shrink: case object
+status=psFailed cases=89 discarded=0 values=140 hash=B8C50C33B9BFFAE5
+  [0] (name: "", kind: tri, a: 1, b: 1, c: 255)
+  [27] (name: "\"U\\YE", kind: circle, r: -9)
+  [55] (name: "+3yd8i/k[t,", kind: tri, a: 62, b: 106, c: 204)
+  [83] (name: "Z0Rl.g,c^\"I)kz>[%zr2\'tzMzS\"+@;FS:pi#xU=", kind: rect, w: -9945457744, h: 18)
+  [111] (name: "", kind: circle, r: -1)
+  [139] (name: "", kind: tri, a: 100, b: 0, c: 0)
+  counterexample: s=(name: "", kind: tri, a: 100, b: 0, c: 0)  (PropertyFailed, 5 choices)
+## state machine: planted queue bug
+status=psFailed cases=78 discarded=0 values=4 hash=04DC5A3945D9DC36
+  [0] lkCommand push: 86 sequences, 607 events
+  [1] lkCommand pop: 65 sequences, 486 events
+  [2] lkDisabled push: 50 sequences, 126 events
+  [3] lkDisabled pop: 100 sequences, 325 events
+  counterexample: push(0); push(0); push(0); pop();  (PropertyFailed, 13 choices)
+## failure database file
+  bdf086209f0717b7.txt
+  | proptest-db 1
+  | 0 1 0 0 1 0 0 0

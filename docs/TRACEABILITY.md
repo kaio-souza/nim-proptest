@@ -80,7 +80,7 @@ Rules of the check:
 | RL12 | Failure database robustness | done | t_database | n/a | versioned format, atomic writes, entries that no longer fit dropped |
 | RL13 | Isolation in stateful tests | done | t_stateful | n/a | fresh model and setup per sequence; teardown after failures |
 | RL14 | Shrinker invariants | done | t_shrink | n/a | |
-| RL15 | Stability policy | partial | t_gen | n/a | golden snapshot; written policy pending |
+| RL15 | Stability policy | done | t_golden, t_gen | n/a | [STABILITY.md](STABILITY.md), ADR-0015; snapshot of 51 properties through the whole pipeline |
 | PF1 | Benchmark suite with baseline | done | bench | b_gen, b_shrink | |
 | PF2 | Fast default run, debug and release | done | bench | b_gen | 100 cases: 0.16 ms (`int`) and 1.5 ms (`seq[int]`) in debug; ROADMAP has the table |
 | PF3 | Parallel cases | deferred | | | |
@@ -97,7 +97,7 @@ Rules of the check:
 | Q4 | Public API documented | partial | CI | n/a | `##` on the public API, `nim doc` built in CI |
 | Q5 | Dogfooding | done | t_prng, t_choices, t_shrink, t_values | n/a | |
 | Q6 | Sanitizers | done | CI | n/a | ASan, UBSan, leak checks |
-| Q7 | Golden tests | done | t_prng, t_gen | n/a | |
+| Q7 | Golden tests | done | t_prng, t_gen, t_golden | n/a | reference vectors; whole-pipeline snapshot on every CI job |
 | Q8 | Examples compiled in CI | done | CI | n/a | |
 | DOC1 | README quickstart | done | doc | n/a | README snippets live in `examples/quickstart.nim` and `examples/tour.nim`, built and run in CI |
 | DOC2 | Writing generators guide | done | doc | n/a | [`GENERATORS.md`](GENERATORS.md); its example `examples/generators.nim` runs in CI |

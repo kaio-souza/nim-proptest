@@ -44,8 +44,10 @@ suite "type-inferred generators":
       check acc.owner.allCharsInSet({'a' .. 'z'})
 
   test "RL15/Q7: golden values for a fixed seed":
-    # Changing what a seed generates is a breaking change (RL15): if this
-    # test fails, update it only together with a CHANGELOG entry.
+    # Changing what a seed generates is a generation change (RL15,
+    # docs/STABILITY.md): if this test fails, update it only together with a
+    # CHANGELOG entry under "Generation changes". t_golden covers the whole
+    # pipeline; this test pins the primitives directly.
     let src = newChoiceSource(42)
     src.startRandom(50)
     # Values changed in v0.3 (edge bias, ADR-0012): see the CHANGELOG.

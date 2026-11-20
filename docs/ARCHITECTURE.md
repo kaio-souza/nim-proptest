@@ -113,7 +113,10 @@ tests/
   t_gen.nim            # type-inferred generators, combinators, golden values (G*, C*, RL15)
   t_shrink.nim         # the shrinker with synthetic probes (S*, RL14, PF6)
   t_engine.nim         # run loop, reports, settings, signatures (A*, K*, R*, RL*, I3)
-  t_integration.nim    # fixtures: unittest output, env vars, files, compile errors (I1, O1, A7, R2, RL9)
+  t_integration.nim    # fixtures: unittest output, env vars, files, compile errors (I1, I2, O1, O3, A7, A8, R2, RL9)
+  t_golden.nim         # the golden snapshot of the whole pipeline (RL15, Q7)
+  golden.nim           # builds the snapshot; golden_mined.nim: its mined-constants property
+  golden/snapshot.txt  # the committed snapshot; rewritten by `nimble golden`
   t_values.nim         # SPEC Part IV reference bugs and their exact minima (V-*)
   fixtures/            # small programs compiled and run by t_integration
 benchmarks/
@@ -123,10 +126,11 @@ benchmarks/
 scripts/
   check_traceability.nim   # TRACEABILITY.md against the tests (ADR-0004)
   check_docs.nim           # CONFIGURATION.md against the code; heading links in every doc
+  update_golden.nim        # `nimble golden`: rewrites tests/golden/snapshot.txt
 ```
 
 Test names cite the SPEC IDs they verify; value tests use `V-<ID>`. Several tests use `forAll` on the library itself (dogfooding, Q5).
 
 ## Determinism contract
 
-Given the same library version, the same generator code and the same seed, the sequence of cases, the shrink path and the final counterexample are identical on every platform and backend. Golden tests (Q7) enforce this; the CHANGELOG lists every change that breaks it (RL15).
+Given the same minor version of the library, the same test code, the same settings and the same seed, the sequence of cases, the shrink path and the final counterexample are identical on every platform and build mode. The golden snapshot (`t_golden`, Q7) enforces this on every CI job; changes happen only in minor releases and are listed in the CHANGELOG under Generation changes. Policy for users: [STABILITY.md](STABILITY.md); reasons: [ADR-0015](decisions/0015-stability-policy.md).

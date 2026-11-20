@@ -247,7 +247,8 @@ forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 | Edge-case bias, boundary hints (`near`, mined constants), swarm testing | ✅ |
 | Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
 | Configuration reference and troubleshooting guide, checked against the code in CI | ✅ |
-| Stability policy | next ([roadmap](docs/ROADMAP.md)) |
+| Stability policy: a seed replays across patch releases, checked by a golden snapshot ([STABILITY.md](docs/STABILITY.md)) | ✅ |
+| `sized`, `unique`, `sortedSeq`, faster generation (one batch of generation changes) | next ([roadmap](docs/ROADMAP.md)) |
 
 ## Known limitations
 

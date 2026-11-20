@@ -51,7 +51,7 @@ Learned while writing them: in `-d:release`, failures other than `check` lose th
 
 ### 3. Trust over time
 
-- [ ] Stability policy written down: what may change between versions, enforced by golden tests (RL15). The wait for the Nimble index (below) starts here.
+- [x] Stability policy written down: what may change between versions, enforced by golden tests (RL15): [`STABILITY.md`](STABILITY.md), [ADR-0015](decisions/0015-stability-policy.md). Generation changes only in minor releases; a golden snapshot of 51 properties through the whole pipeline (seed derivation, sizes, edge bias, mined constants, derived types, combinators, a state machine, shrinking, the failure database file) runs on every CI job. The wait for the Nimble index (below) starts here, on 2026-11-20.
 
 ### 4. Generation changes, together
 
