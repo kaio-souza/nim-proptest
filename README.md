@@ -1,8 +1,16 @@
 # proptest
 
-Property-based testing for Nim: state a rule, let the library generate the inputs, and get the **smallest** input that breaks it.
+A **property-based testing library for the [Nim](https://nim-lang.org) programming language**, distributed as a Nimble package. State a rule, let the library generate the inputs, and get the **smallest** input that breaks it.
 
-> **Status: design phase.** The API below is a sketch of the intended usage, not working code. See [`docs/SPEC.md`](docs/SPEC.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status: design phase.** The package is not published yet and the API below is a sketch of the intended usage, not working code. See [`docs/SPEC.md`](docs/SPEC.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## Installation (planned)
+
+```sh
+nimble install proptest
+```
+
+Requires Nim >= 2.2.4. No dependencies outside the Nim standard library. Works with `std/unittest`, `unittest2` or standalone.
 
 ## Intended usage
 
@@ -30,7 +38,47 @@ On failure:
   Replay: PROPTEST_SEED=8412093 nim r tests/t_process.nim
 ```
 
-Stateful testing (sketch): random command sequences run against the real system and a model, and a failure is reported as the shortest sequence, printed as Nim code you can paste as a regression test.
+### Stateful testing (sketch)
+
+Random command sequences run against the real system and a simple model; a failure is reported as the shortest failing sequence, printed as Nim code.
+
+```nim
+import proptest, proptest/stateful, std/[unittest, deques]
+
+type Model = object
+  items: seq[int]            # the model: a plain seq
+
+stateMachine BoundedQueue:
+  model: Model
+  system: newBoundedQueue[int](capacity = 3)
+
+  command push(x: int):
+    precondition: model.items.len < 3
+    run: system.push(x)
+    update: model.items.add x
+
+  command pop():
+    precondition: model.items.len > 0
+    run: system.pop()
+    postcondition: result == model.items[0]   # checked before `update`
+    update: model.items.delete(0)
+
+  invariant: system.len == model.items.len
+
+test "bounded queue behaves like a seq":
+  checkStateMachine(BoundedQueue)
+```
+
+On failure:
+
+```
+Falsified after 58 sequences and 41 shrinks. Minimal sequence:
+  var q = newBoundedQueue[int](capacity = 3)
+  q.push(0)
+  q.push(0)
+  q.push(1)
+  doAssert q.pop() == 0    # got 1
+```
 
 ## Planned highlights
 
@@ -45,4 +93,4 @@ Stateful testing (sketch): random command sequences run against the real system 
 
 ## License
 
-To be defined.
+[MIT](LICENSE)

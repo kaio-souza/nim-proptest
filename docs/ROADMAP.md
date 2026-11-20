@@ -17,14 +17,18 @@ Foundations first: the parts that are expensive to change later (PRNG, choice bu
 - [ ] Own PRNG and stable hashing, with golden tests (RL1, RL2, Q7, ADR-0005)
 - [ ] Choice source with a preallocated, reused buffer and bounded length (G1, PF4, RL7, ADR-0001)
 - [ ] Built-in generators, expanded without closures; type inference; size control (G2, G3, G7, PF5, ADR-0007)
-- [ ] Combinators `map`, `filter`, `flatMap`, `oneOf`, `elements`, `constant` (C1, C2)
+- [ ] Combinators `map`, `filter`, `flatMap`, `oneOf`, `elements`, `constant`; custom generators as plain procs (C1, C2, C7)
 - [ ] Integrated shrinking with deterministic results, failure signatures and no slippage (S1–S3, RL4, RL14)
 - [ ] Flaky detection; generator errors reported separately (RL3, RL6, ADR-0006)
-- [ ] `forAll`, `assume`, failure report (A1–A3)
+- [ ] `forAll`, `assume`, failure report, `Defect`s as failures, value printing (A1–A5)
+- [ ] `check`/`require` rewriting inside `forAll`, quiet exploration (A6, O1, ADR-0009)
+- [ ] `--panics:on` detected and documented (A7)
+- [ ] README quickstart compiled in CI, CHANGELOG kept from the first release (DOC1, DOC7, Q8)
 - [ ] Seed printing, `PROPTEST_SEED`, crash breadcrumbs (R1, R2, R5, RL9)
 - [ ] Per-property settings (K1)
 - [ ] `std/unittest` integration (I1)
-- [ ] Value tests for S1, RL3, RL4; benchmarks with the hand-written baseline (PF1, EV2, EV3)
+- [ ] Value tests for S1, RL3, RL4; benchmarks with the hand-written baseline, in debug and release (PF1, PF2, EV2, EV3)
+- [ ] Public API documented with `##` and `nim doc` generated in CI (Q4)
 - [ ] CI: orc/arc × threads (Q1), deterministic gates on shrink executions and allocations (PF7, ADR-0008), sanitizers (Q6)
 
 ## v0.2: stateful testing
@@ -36,6 +40,7 @@ Goal: replace the planned model test of `circuit_breaker` with this library.
 - [ ] Invariants and injectable time (M5, M6)
 - [ ] Fresh system and model per sequence, teardown always runs (RL13)
 - [ ] `circuit_breaker` model test (its V2/Q5) as the first external user
+- [ ] Stateful testing tutorial based on that test (DOC4)
 
 ## v0.3: richer generation and diagnostics
 
@@ -49,13 +54,18 @@ Goal: replace the planned model test of `circuit_breaker` with this library.
 - [ ] Per-case deadline and time budget per property (RL8, PF8)
 - [ ] Health checks (RL11)
 - [ ] Lazy formatting (PF10), compile-time benchmark (PF9)
+- [ ] Verbosity levels; statistics and warnings in the report (O2, O4)
+- [ ] Writing generators guide and property patterns cookbook (DOC2, DOC3)
 
 ## v0.4: workflow
 
 - [ ] Failure database with versioned format and atomic writes, explicit examples (R3, R4, RL12)
 - [ ] Stability policy documented and enforced by golden tests (RL15)
+- [ ] JSON report for CI (O3)
+- [ ] Configuration reference and troubleshooting guide (DOC5, DOC6)
 - [ ] Environment-driven defaults and validation (K2, K3)
 - [ ] `unittest2` module and standalone API (I2, I3)
+- [ ] CI on macOS and Windows, Nim devel (Q2)
 - [ ] Publish to the Nimble index
 
 ## v1.0: acceptance criteria

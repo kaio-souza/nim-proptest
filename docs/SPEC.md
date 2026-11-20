@@ -1,6 +1,6 @@
 # Requirements specification
 
-Status: **design phase**. Nothing here is implemented yet. Each requirement has an ID used in issues, test names and benchmarks. Priorities: **P0** mandatory for the first release, **P1** expected from a mature library, **P2** differentiator.
+`proptest` is a property-based testing library for the Nim programming language, distributed as a Nimble package. Status: **design phase**. Nothing here is implemented yet. Each requirement has an ID used in issues, test names and benchmarks. Priorities: **P0** mandatory for the first release, **P1** expected from a mature library, **P2** differentiator.
 
 - Delivery order: [`ROADMAP.md`](ROADMAP.md).
 - Rationale for the main choices: [`decisions/`](decisions/README.md).
@@ -98,6 +98,8 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 | A3 | P0 | Failure report: property name, minimal counterexample with variable names, the original error and stack trace, number of cases run and shrink steps. |
 | A4 | P1 | `Defect`s count as failures (they are what PBT is meant to find), with an option to let them propagate. |
 | A5 | P1 | Values are printed with `$` when available, falling back to a structural representation. |
+| A6 | P0 | **Assertions inside `forAll`**: `check` and `require` from `std/unittest`/`unittest2` do not raise on failure; inside a `forAll` body they are rewritten so a failure aborts the current case silently and is seen by the engine. The host runner is told about the failure once, with the final report ([ADR-0009](decisions/0009-assertions-inside-forall.md)). |
+| A7 | P1 | **`--panics:on`**: `Defect`s cannot be caught in this mode, so the process stops at the first failing case. This is detected at compile time, documented, and the crash breadcrumbs (RL9) allow replay; shrinking requires `--panics:off`. |
 
 ## 10. Stateful / model-based testing (M)
 
@@ -119,6 +121,15 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 | D2 | P1 | `cover(percent, cond, label)`: fail the property when a required class of inputs was generated too rarely. |
 | D3 | P2 | Summary of generated value sizes, to detect generators that never produce large inputs. |
 
+## 11a. Output and reporting (O)
+
+| ID | Pri | Requirement |
+|----|-----|-------------|
+| O1 | P0 | **Quiet exploration**: the library prints nothing per case or per shrink step by default; only the final report. Output written by the property body during the final re-run (RL3) is shown inside the report, clearly delimited. |
+| O2 | P1 | Verbosity levels: `quiet` (failures only), `normal` (default), `verbose` (every case), `debug` (every shrink step). |
+| O3 | P1 | Machine-readable report (JSON) for CI tooling, enabled by configuration or environment variable. |
+| O4 | P1 | The report includes the statistics (D1), coverage results (D2) and health-check warnings (RL11). |
+
 ## 12. Configuration (K)
 
 | ID | Pri | Requirement |
@@ -126,6 +137,8 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 | K1 | P0 | Per-property settings: number of cases, maximum size, maximum discard ratio, shrink budget, seed. |
 | K2 | P1 | Global defaults through environment variables, so CI can run more cases than local development (e.g. `PROPTEST_CASES=10000`). |
 | K3 | P1 | Validation of settings with clear errors. |
+
+Planned environment variables (final names fixed in v0.1): `PROPTEST_SEED`, `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_DEADLINE`, `PROPTEST_DB` (path or `off`), `PROPTEST_VERBOSITY`, `PROPTEST_REPORT` (`text` or `json`).
 
 ## 13. Integration (I)
 
@@ -194,6 +207,19 @@ Initial targets (release / debug, to be confirmed by PF1): drawing one choice < 
 | Q5 | P0 | The library tests itself with properties (dogfooding), in addition to unit tests. |
 | Q6 | P1 | AddressSanitizer, UndefinedBehaviorSanitizer and leak checks in CI (closures held by generators must not leak under ARC). |
 | Q7 | P0 | **Golden tests**: fixed seeds with their expected choice streams and generated values are committed and checked on every CI platform and backend (proves RL1, RL2, RL15). |
+| Q8 | P1 | Examples and the README quickstart are compiled and run in CI. |
+
+## 18. User documentation (DOC)
+
+| ID | Pri | Requirement |
+|----|-----|-------------|
+| DOC1 | P0 | README with a quickstart that works after `nimble install` (validated by Q8). |
+| DOC2 | P1 | **Writing generators** guide, including the rule "a smaller choice must produce a simpler value" (ADR-0001) and how to avoid heavy `filter`s. |
+| DOC3 | P1 | **Property patterns** cookbook: round-trip, reference implementation (oracle), invariants, idempotence, metamorphic relations, "never crashes". |
+| DOC4 | P1 | **Stateful testing tutorial**, using a circuit breaker as the worked example. |
+| DOC5 | P1 | Configuration reference: every setting and environment variable, with defaults. |
+| DOC6 | P1 | Troubleshooting: flaky properties, health-check messages, slow shrinking, replaying a seed, `--panics:on`. |
+| DOC7 | P0 | CHANGELOG with semantic versioning, including every change to generated values (RL15). |
 
 ---
 
@@ -244,5 +270,6 @@ Same rule as `circuit_breaker`: **nothing is delivered without tests and benchma
 | RL5 multiple failures | two independent bugs in one function | both reported, each with its own minimal counterexample |
 | RL8 deadline | a function that loops forever when the input contains `42` | reported as a deadline failure with counterexample `[42]` |
 | RL11 health check | `filter` that accepts 1 value in 10 000 | run stops early with a message suggesting a constructive generator |
+| A6 quiet assertions | a property with a failing `check` inside `std/unittest` | one failure reported by the runner, no intermediate output from shrinking |
 | PF6/PF7 shrink cost | each reference bug above | number of executions to reach the minimum, gated in CI |
 | First real consumer | `circuit_breaker` model test (its SPEC V2/Q5) | runs in that project's CI |
