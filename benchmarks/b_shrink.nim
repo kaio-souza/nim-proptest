@@ -15,7 +15,53 @@ proc buggyReverse(xs: seq[int]): seq[int] =
   for i in countdown(xs.high, 0): result.add xs[i]
   if xs.len > 3: result.setLen(result.len - 1)
 
-type Case = tuple[name: string; run: proc(): PropertyResult]
+type
+  Case = tuple[name: string; run: proc(): PropertyResult]
+  Queue = ref object
+    items: seq[int]
+    pushes, pops: int
+  QueueModel = object
+    items: seq[int]
+
+proc push(q: Queue; x: int) =
+  q.items.add x
+  inc q.pushes
+
+proc pop(q: Queue): int =
+  ## Planted bug (SPEC Part IV): wrong after exactly 3 pushes and 1 pop.
+  result = q.items[0]
+  q.items.delete(0)
+  inc q.pops
+  if q.pushes == 3 and q.pops == 1: inc result
+
+stateMachine SmallQueue:
+  model: QueueModel()
+  setup:
+    let q = Queue()
+  command push(x in ints(-10, 10)):
+    precondition: model.items.len < 3
+    run: q.push(x)
+    update: model.items.add x
+  command pop():
+    precondition: model.items.len > 0
+    run: q.pop()
+    postcondition: result == model.items[0]
+    update: model.items.delete(0)
+
+# Same bug, steps of 5+ choices: whole-step deletion (spans) matters here.
+stateMachine WideQueue:
+  model: QueueModel()
+  setup:
+    let q = Queue()
+  command push(x in ints(-10, 10), tag in string, weights in seq[int]):
+    precondition: model.items.len < 3
+    run: q.push(x)
+    update: model.items.add x
+  command pop():
+    precondition: model.items.len > 0
+    run: q.pop()
+    postcondition: result == model.items[0]
+    update: model.items.delete(0)
 
 let evens = ints(0, 10_000).filter(proc(x: int): bool = x mod 2 == 0)
 let labels = ints(0, 1_000).map(proc(x: int): string = "#" & $x)
@@ -45,6 +91,10 @@ let cases: seq[Case] = @[
     forAllResult(initSettings(seed = 11), a in ints(0, 1000), b in ints(0, 1000)):
       if a > 100: raise newException(ValueError, "bug A")
       if b > 100: raise newException(IOError, "bug B")),
+  ("stateful queue (M3)", proc(): PropertyResult =
+    stateMachineResult(SmallQueue, initSettings(seed = 1))),
+  ("stateful queue, wide steps (M3)", proc(): PropertyResult =
+    stateMachineResult(WideQueue, initSettings(seed = 1))),
 ]
 
 const baselineFile = currentSourcePath().parentDir / "baseline" / "shrink.json"
@@ -61,6 +111,7 @@ proc main() =
     for f in r.failures:
       total += f.shrinkExecutions
       for (_, v) in f.inputs: shown.add v
+      for step in f.steps: shown.add step
     current[name] = total
     echo &"{name:<30} {total:>10} {ms:>9.2f}  {shown}"
 

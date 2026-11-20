@@ -20,17 +20,29 @@ proc formatFailure(f: Failure; n, total: int): string =
   if f.flaky:
     result.add "  FLAKY: the minimal case did not fail again when re-run.\n" &
       "  Common causes: time, randomness, global state, threads or I/O in the property.\n"
-  result.add "  Counterexample (" & $f.choices.len & " choices, " &
-    $f.shrinkExecutions & " shrink executions):\n"
-  if f.inputs.len == 0:
-    result.add "    (no inputs)\n"
-  for (name, value) in f.inputs:
-    result.add "    " & name & " = " & value & "\n"
+  if f.machine.len > 0:
+    # Stateful (M4): the sequence as code that can be pasted into a test.
+    result.add "  Shortest failing sequence (" & $f.steps.len & " steps, " &
+      $f.choices.len & " choices, " & $f.shrinkExecutions & " shrink executions):\n"
+    result.add "    replayCommands " & f.machine & ":\n"
+    if f.steps.len == 0:
+      result.add "      discard  # fails in setup or teardown, before any step\n"
+    for step in f.steps:
+      result.add "      " & step & "\n"
+  else:
+    result.add "  Counterexample (" & $f.choices.len & " choices, " &
+      $f.shrinkExecutions & " shrink executions):\n"
+    if f.inputs.len == 0:
+      result.add "    (no inputs)\n"
+    for (name, value) in f.inputs:
+      result.add "    " & name & " = " & value & "\n"
   result.add "  Error: [" & f.signature.kind & "] " & indent(f.message, 4).strip & "\n"
   if f.signature.location.len > 0:
     result.add "  Location: " & f.signature.location & "\n"
   else:
     result.add "  Location unknown (no stack trace): failures are told apart by type only.\n"
+  if f.steps.len > 0:
+    result.add "  Failed at step " & $f.steps.len & ": " & f.steps[^1] & "\n"
 
 proc formatReport*(r: PropertyResult): string =
   ## Multi-line report; empty for passing properties.

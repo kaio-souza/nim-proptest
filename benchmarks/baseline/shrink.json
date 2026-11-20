@@ -1,9 +1,11 @@
 {
-  "reverse drops last element": 113,
-  "filtered evens >= 100": 49,
+  "reverse drops last element": 125,
+  "filtered evens >= 100": 47,
   "mapped labels of length 4": 17,
   "int boundary 123456": 83,
-  "string containing z": 24,
-  "list sum >= 1500": 68,
-  "two independent bugs": 38
+  "string containing z": 20,
+  "list sum >= 1500": 66,
+  "two independent bugs": 38,
+  "stateful queue (M3)": 115,
+  "stateful queue, wide steps (M3)": 205
 }

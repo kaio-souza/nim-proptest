@@ -2,7 +2,30 @@
 
 All notable changes. Versions follow semantic versioning. Any change to the values generated for a given seed is listed under **Generation changes** (see the stability policy, SPEC RL15).
 
-## Unreleased
+## Unreleased (v0.2)
+
+### Added
+- Stateful (model-based) testing, ADR-0011: the `stateMachine` macro (model,
+  setup, teardown, commands with preconditions, `run`, postconditions and
+  updates, invariants), `checkStateMachine`, `stateMachineResult`, and the
+  `maxSteps` setting. Commands are chosen among those enabled by their
+  preconditions, so generated and shrunk sequences are always valid.
+- Failing sequences are reported as a `replayCommands` block of Nim code, with
+  the failing step; `replayCommands` runs it as a regression test. `showCode`
+  prints values as Nim literals (overload it for custom types).
+- Shrinking deletes whole collection elements and stateful steps (spans) in a
+  new first pass, `deleteSpans`.
+- Stateful testing tutorial (`docs/STATEFUL.md`) and `examples/stateful.nim`.
+
+### Changed
+- `Probe` (shrinker callback) takes a third parameter, the recorded spans.
+- `check` messages print each expression on one line.
+
+### Fixed
+- A replayed stateful sequence that raised leaked memory under ARC/ORC
+  (found by LeakSanitizer before release).
+
+## v0.1 (unreleased, superseded by v0.2)
 
 ### Added
 - Design documentation: specification, roadmap, architecture and ADRs 0001–0010.

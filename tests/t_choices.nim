@@ -145,3 +145,20 @@ suite "choice source":
     expect DiscardCase:
       assume(false)
     assume(true)
+
+  test "M3/S2: each collection element, with its continue choice, is one span":
+    let src = replaying([1'u64, 5, 1, 7, 0])
+    var m = src.initMany(0, 10)
+    var n = 0
+    while src.more(m):
+      discard src.drawUpTo(10)
+      inc n
+    check n == 2
+    check src.spans == @[(start: 0, stop: 2), (start: 2, stop: 4)]
+    # endElement closes the current element at once (stateful steps).
+    src.startReplay([1'u64, 3], 100)
+    var m2 = src.initMany(0, 10)
+    check src.more(m2)
+    discard src.drawUpTo(10)
+    src.endElement(m2)
+    check src.spans == @[(start: 0, stop: 2)]

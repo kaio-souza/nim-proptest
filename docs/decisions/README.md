@@ -14,6 +14,8 @@ Each file records one decision: its context, what was decided, the consequences,
 | [0008](0008-deterministic-performance-gates.md) | CI gates on executions and allocations, not timings | Proposed |
 | [0009](0009-assertions-inside-forall.md) | `check`/`require` inside `forAll` rewritten to raise; one report to the runner | Proposed |
 | [0010](0010-forall-in-syntax.md) | `forAll(x in source)`: one form for types and generators | Accepted |
+| [0011](0011-stateful-testing.md) | Stateful testing: `stateMachine` macro over the choice sequence, steps as spans | Accepted |
+| [0012](0012-bug-finding-power.md) | Bug-finding power: detection-rate benchmark, coverage, boundary hints, swarm testing, deadlines | Proposed |
 
 ## Template
 

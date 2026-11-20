@@ -6,14 +6,20 @@
 ## terminates; a budget of executions bounds its cost (S4, PF6).
 
 import std/[sets, hashes]
+import choices
+
+export Span
 
 type
-  Probe* = proc(candidate: seq[uint64]; used: var seq[uint64]): bool {.closure.}
+  Probe* = proc(candidate: seq[uint64]; used: var seq[uint64];
+                spans: var seq[Span]): bool {.closure.}
     ## Runs `candidate`; returns true when it fails with the target
-    ## signature, and stores in `used` the choices actually consumed.
+    ## signature, and stores in `used` the choices actually consumed and in
+    ## `spans` the elements and steps recorded while consuming them.
 
   Shrinker* = object
     best*: seq[uint64]
+    bestSpans*: seq[Span]   ## Spans of `best` (empty when unknown).
     executions*: int
     budget: int
     tried: HashSet[Hash]
@@ -26,8 +32,9 @@ proc shortlexLess*(a, b: openArray[uint64]): bool =
     if a[i] != b[i]: return a[i] < b[i]
   false
 
-proc initShrinker*(start: seq[uint64]; budget: int; probe: Probe): Shrinker =
-  Shrinker(best: start, budget: budget, probe: probe)
+proc initShrinker*(start: seq[uint64]; budget: int; probe: Probe;
+                   spans: seq[Span] = @[]): Shrinker =
+  Shrinker(best: start, bestSpans: spans, budget: budget, probe: probe)
 
 proc exhausted*(sh: Shrinker): bool {.inline.} = sh.executions >= sh.budget
 
@@ -39,9 +46,23 @@ proc attempt(sh: var Shrinker; candidate: seq[uint64]): bool =
   sh.tried.incl h
   inc sh.executions
   var used: seq[uint64]
-  if sh.probe(candidate, used) and shortlexLess(used, sh.best):
+  var spans: seq[Span]
+  if sh.probe(candidate, used, spans) and shortlexLess(used, sh.best):
     sh.best = used
+    sh.bestSpans = spans
     result = true
+
+proc deleteSpans(sh: var Shrinker): bool =
+  ## Deletes whole elements and stateful steps, last first. Spans of more
+  ## than 2 choices only: shorter ones are covered by `deleteChunks`.
+  var i = sh.bestSpans.len - 1
+  while i >= 0 and not sh.exhausted:
+    let (a, b) = sh.bestSpans[i]
+    if b - a > 2 and b <= sh.best.len:
+      if sh.attempt(sh.best[0 ..< a] & sh.best[b .. ^1]):
+        result = true
+        i = min(i, sh.bestSpans.len)
+    dec i
 
 proc deleteChunks(sh: var Shrinker): bool =
   for k in [8, 4, 2, 1]:
@@ -116,6 +137,7 @@ proc shrink*(sh: var Shrinker) =
   var progress = true
   while progress and not sh.exhausted:
     progress = false
+    if sh.deleteSpans(): progress = true
     if sh.deleteChunks(): progress = true
     if sh.zeroChunks(): progress = true
     if sh.minimizeValues(): progress = true

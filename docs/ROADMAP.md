@@ -1,23 +1,24 @@
 # Roadmap
 
-Updated 2026-11-19. IDs refer to [`SPEC.md`](SPEC.md).
+Updated 2026-11-20. IDs refer to [`SPEC.md`](SPEC.md).
 
 Legend: [x] done (implemented and tested) · [ ] pending · [~] deferred
 
 ## Where we are
 
-**v0.1 implemented and tested, not yet published.** Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 56 done or partial, all with evidence).
+**v0.2 implemented and tested (stateful testing), not yet published.** v0.1 ran green on GitHub CI; the v0.2 changes have been checked locally on the full CI matrix. Next: v0.3. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 64 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
-| Tests | 72, all passing on orc/arc × threads on/off × debug/release |
+| Tests | 87, all passing on orc/arc × threads on/off × debug/release |
 | Sanitizers | ASan, UBSan and leak checks clean on orc and arc |
 | Golden tests | PRNG and hash match the authors' reference C code and the official FNV-1a vectors; generated values pinned for seed 42 |
-| Value tests | the reference bugs of SPEC Part IV shrink to their exact minima; multiple bugs and no slippage verified on 20 seeds each (100/100 on 100 seeds) |
-| Shrink cost (gate) | 17 to 113 property executions per reference bug (target < 500) |
-| Allocation gate | 0 allocations per choice and per generated integer |
+| Value tests | the reference bugs of SPEC Part IV shrink to their exact minima, including the stateful queue (4 steps, 20/20 seeds); multiple bugs and no slippage verified on 20 seeds each (100/100 on 100 seeds) |
+| Shrink cost (gate) | 17 to 205 property executions per reference bug (target < 500) |
+| Allocation gate | 0 allocations per choice, per generated integer and per stateful sequence |
+| External user | `nim-circuit-breaker` model test (its V2/Q5): 1000 sequences, three planted model mistakes found and shrunk |
 
-The test suite found and fixed two real problems during development: undefined behavior (`countLeadingZeroBits(0)`) that produced out-of-range integers **only in release builds**, and multi-bug detection that depended on luck with the seed (exploration now continues after the first failure).
+The test suite found and fixed real problems during development: in v0.2, a leak under LeakSanitizer when a replayed sequence raised (an ARC behavior of Nim 2.2.4 with temporaries passed to a raising call). In v0.1, undefined behavior (`countLeadingZeroBits(0)`) that produced out-of-range integers **only in release builds**, and multi-bug detection that depended on luck with the seed (exploration now continues after the first failure).
 
 ## v0.1: smallest useful core
 
@@ -41,7 +42,7 @@ Goal: write a property over built-in types inside `std/unittest`, get a minimal,
 - [x] Deterministic gates on shrink executions and allocations (PF7, ADR-0008)
 - [x] Traceability matrix and its check (ADR-0004)
 - [x] CI workflows: test matrix, sanitizers, examples, `nim doc`, traceability, gates (Q1, Q4, Q6, Q8)
-- [ ] First real CI run on GitHub
+- [x] First real CI run on GitHub (green)
 
 ## Performance against the initial targets
 
@@ -54,37 +55,64 @@ Measured on an Intel Core i5-10210U laptop (noisy: repeated runs vary by up to 2
 | Per-case overhead incl. an `int` | < 200 ns / < 1 µs | 64 ns / 1.6 µs | release met, debug missed |
 | Run of 100 cases, `x in int` | milliseconds (PF2) | 0.006 ms / 0.16 ms | met |
 | Run of 100 cases, `xs in seq[int]` | milliseconds (PF2) | 0.16 ms / 1.5 ms | met |
-| Shrinking a reference bug | < 500 executions | 17–113 | met |
+| Shrinking a reference bug | < 500 executions | 17–205 | met |
+| One stateful sequence, 50 steps max (v0.2) | none set | ~0.6 µs release, 0 allocations | |
 
-Missed targets go to v0.3 below. Already done to get here: inlined hot paths, a fixed choice buffer instead of `seq.add`, no 64-bit division in the exploration distribution, constant-time float scaling (from 149 ns to ~55 ns per float).
+Missed targets go to v0.4 below. Already done to get here: inlined hot paths, a fixed choice buffer instead of `seq.add`, no 64-bit division in the exploration distribution, constant-time float scaling (from 149 ns to ~55 ns per float).
 
 ## v0.2: stateful testing
 
-Goal: replace the planned model test of `circuit_breaker` with this library.
+Goal: replace the planned model test of `circuit_breaker` with this library. Design: [ADR-0011](decisions/0011-stateful-testing.md).
 
-- [ ] Model, commands, preconditions, postconditions (M1, M2)
-- [ ] Sequence shrinking (M3) and failures printed as Nim code (M4)
-- [ ] Invariants and injectable time (M5, M6)
-- [ ] Fresh system and model per sequence, teardown always runs (RL13)
-- [ ] `circuit_breaker` model test (its V2/Q5) as the first external user
-- [ ] Stateful testing tutorial based on that test (DOC4)
+- [x] Spike: `result` binding, `typeof` of argument sources, enabled-command draw (ADR-0011 questions settled)
+- [x] Spans in `ChoiceSource` and the `deleteSpans` pass, also used by collections (S2, PF6)
+- [x] Model, commands, preconditions, postconditions (M1, M2); `checkStateMachine`, `stateMachineResult`, `maxSteps`
+- [x] Sequence shrinking (M3) and failures printed as Nim code (M4): `replayCommands`, `showCode`
+- [x] Invariants and injectable time (M5, M6)
+- [x] Fresh system and model per sequence, teardown always runs (RL13)
+- [x] Value test (3 pushes + 1 pop → 4 steps) and shrink/allocation gates
+- [x] `circuit_breaker` model test (its V2/Q5) as the first external user
+- [x] Stateful testing tutorial (DOC4): [`STATEFUL.md`](STATEFUL.md), example run in CI
+- [ ] First CI run of v0.2 on GitHub (push), including `nim-circuit-breaker` CI once proptest v0.2 is reachable from it
 
-## v0.3: richer generation and diagnostics
+Learned in v0.2, for v0.3: uniform integers rarely hit a specific boundary (a timeout of exactly 1000 ms in `0 .. 2000`). The tutorial adds boundaries by hand with `oneOf(..., elements([...]))`; boundary hints and swarm testing (v0.3, ADR-0012) should make that unnecessary.
+
+## v0.3: find more bugs, and show what was tested
+
+Reordered after v0.2. Two weaknesses showed up while testing real code: a bug at an exact domain boundary (a timeout of exactly 1000 ms) was rarely hit by uniform integers, and nothing in the report said so. The cap of the circuit breaker's backoff, too, was only reached once the clock range was widened by hand. More generator types would not have helped. Knowing what was generated, and steering exploration toward boundaries, would have. Design: [ADR-0012](decisions/0012-bug-finding-power.md) (proposed).
+
+Order of work (each step lands with tests, a value test and, where it touches the hot path, a gate):
+
+1. **Bug-finding benchmark** (`benchmarks/b_find.nim`): planted bugs (including the v0.2 ones: breaker boundary, backoff cap, queue) run over N fixed seeds; the gate is the detection rate and the median number of cases to the first failure. Every later step must move these numbers, not just pass tests.
+2. **`classify` / `cover` (D1, D2)**, plus automatic statistics for state machines: how often each command ran, sequence lengths, and how often each command was disabled by its precondition. Printed in the report (O4); static labels do not allocate (PF10).
+3. **Edge-case bias, complete (G8)**: integers already hit 0, 1 and the limits. Add -1, floats (`-0.0`, subnormals, `NaN`, `Inf`), empty and single-element collections, with a configurable probability. **Boundary hints**: `ints(0, 2000, near = [openFor])` explores `v-1, v, v+1` around given values, so the tutorial's `oneOf(..., elements([...]))` workaround goes away.
+4. **Swarm testing for state machines**: each sequence randomly disables a subset of commands, so long runs of a few commands (five probe failures in a row to reach the backoff cap) become likely. Shrinking is unaffected: the subset is part of the choice sequence.
+5. **Per-case deadline and time budgets (RL8, PF8, S4 rest)**: a case slower than the deadline is a failure and is shrunk; the run and the shrink stop gracefully at their budgets and say so. A case that never returns needs a watchdog (RL10, after 1.0); until then it is replayable from `.proptest/last-run`.
+6. **Health checks (RL11)** and **verbosity levels (O2)**: a filter that rejects almost everything, generation dominating the run time, data constantly hitting size limits.
+7. **Docs**: property patterns cookbook (DOC3), and a section of the tutorial on reading coverage.
+
+- [x] Bug-finding benchmark with detection-rate gate (`benchmarks/b_find.nim`, in `nimble gate`). Baseline before v0.3, 20 seeds each: reverse, midpoint overflow, boundary 100, stateful queue 20/20; breaker probe at exactly 1000 ms 16/20; **exact 1000 in 0..2000 0/20; breaker backoff cap 0/20**
+- [ ] Median cases to the first failure in `b_find` (needs `PropertyResult.firstFailureAt`)
+- [ ] `classify` and `cover`; stateful statistics (D1, D2, O4, PF10)
+- [ ] Edge-case bias and boundary hints (G8)
+- [ ] Swarm testing for state machines (M2, new)
+- [ ] Per-case deadline; time budgets for runs and shrinking (RL8, PF8, S4)
+- [ ] Health checks; verbosity levels (RL11, O2)
+- [ ] Property patterns cookbook (DOC3)
+- [ ] Experiment: constants mined from the property as automatic boundary hints, kept only if `b_find` improves (ADR-0012)
+
+Decided in ADR-0012: deadline off by default (`PROPTEST_DEADLINE` for CI); `cover` in state machines counts per sequence.
+
+## v0.4: richer generation
 
 - [ ] Object, case object and distinct derivation (G4)
 - [ ] Collections, refs, string alphabets, float options (G5, G6, G9)
-- [ ] Edge-case bias (G8)
 - [ ] `frequency`, `recursive`, `sized`, `unique` (C3–C6)
-- [ ] `classify` and `cover` (D1, D2)
-- [ ] Time budget for shrinking (S4, rest)
 - [ ] Generation speed: meet the `int` and debug-build targets above
-- [ ] Per-case deadline and time budget per property (RL8, PF8)
-- [ ] Health checks (RL11)
-- [ ] Lazy formatting (PF10), compile-time benchmark (PF9)
-- [ ] Verbosity levels; statistics and warnings in the report (O2, O4)
-- [ ] Writing generators guide and property patterns cookbook (DOC2, DOC3)
+- [ ] Compile-time benchmark (PF9), with derived generators in it
+- [ ] Writing generators guide (DOC2)
 
-## v0.4: workflow
+## v0.5: workflow
 
 - [ ] Failure database with versioned format and atomic writes, explicit examples (R3, R4, RL12)
 - [ ] Stability policy documented and enforced by golden tests (RL15)

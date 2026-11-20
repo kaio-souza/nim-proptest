@@ -21,9 +21,9 @@
 ## `runProperty` gives the result object without raising (I3).
 
 import std/[macros, os]
-import proptest/[choices, gen, assertions, engine, report]
+import proptest/[choices, gen, assertions, engine, report, stateful]
 
-export choices, gen, assertions, engine, report
+export choices, gen, assertions, engine, report, stateful
 
 when compileOption("panics"):
   {.warning: "proptest: compiled with --panics:on. Defects end the process at the " &
@@ -118,3 +118,20 @@ macro forAllResult*(args: varargs[untyped]): PropertyResult =
     (block:
       `run`
       `res`)
+
+macro checkStateMachine*(machine: typed; settings: untyped = nil): untyped =
+  ## Runs random command sequences of a machine defined with `stateMachine`
+  ## (ADR-0011). Inside a unittest `test`, a failure marks the test as failed
+  ## with one report, which prints the shortest failing sequence as a
+  ## `replayCommands` block; elsewhere it raises `PropertyError`.
+  let res = genSym(nskLet, "res")
+  let s = if settings.kind == nnkNilLit: newCall(bindSym"initSettings") else: settings
+  result = quote do:
+    block:
+      let `res` = stateMachineResult(`machine`, `s`)
+      if not `res`.passed:
+        when declared(testStatusIMPL):
+          checkpoint(formatReport(`res`))
+          fail()
+        else:
+          raisePropertyError(`res`)

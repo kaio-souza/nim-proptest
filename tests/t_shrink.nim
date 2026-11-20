@@ -5,7 +5,7 @@ import proptest, proptest/shrink
 
 proc sumAtLeast(t: uint64; calls: ptr int = nil): Probe =
   ## Fails (returns true) when the choices add up to at least `t`.
-  result = proc(candidate: seq[uint64]; used: var seq[uint64]): bool =
+  result = proc(candidate: seq[uint64]; used: var seq[uint64]; spans: var seq[Span]): bool =
     if calls != nil: inc calls[]
     used = candidate
     var s = 0'u64
@@ -31,7 +31,8 @@ suite "shrinker":
       sh.shrink()
       check not shortlexLess(start, sh.best)
       var used: seq[uint64]
-      check sumAtLeast(t)(sh.best, used)
+      var spans: seq[Span]
+      check sumAtLeast(t)(sh.best, used, spans)
       # The smallest sequence whose sum reaches t is the single choice [t].
       check sh.best == @[t]
 
@@ -54,7 +55,7 @@ suite "shrinker":
   test "PF6: a candidate is never executed twice":
     var seen: HashSet[Hash]
     var duplicates = 0
-    let probe: Probe = proc(candidate: seq[uint64]; used: var seq[uint64]): bool =
+    let probe: Probe = proc(candidate: seq[uint64]; used: var seq[uint64]; spans: var seq[Span]): bool =
       let h = hash(candidate)
       if h in seen: inc duplicates
       seen.incl h

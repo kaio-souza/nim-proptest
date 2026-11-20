@@ -15,6 +15,7 @@ type
     maxShrinks*: int       ## Execution budget for shrinking each failure.
     maxChoices*: int       ## Maximum choices per case (RL7).
     maxFailures*: int      ## Distinct failures kept and shrunk (RL5).
+    maxSteps*: int         ## Stateful tests: maximum commands per sequence.
     seed*: uint64          ## Run seed; 0 uses `PROPTEST_SEED` or a random one.
 
   PropertyStatus* = enum
@@ -30,8 +31,11 @@ type
     message*: string
     stackTrace*: string
     inputs*: seq[tuple[name, value: string]]
+    steps*: seq[string]        ## Stateful tests: the failing sequence as Nim calls.
+    machine*: string           ## Stateful tests: the machine name.
     shrinkExecutions*: int
     flaky*: bool
+    spans: seq[Span]
 
   PropertyResult* = object
     name*: string
@@ -70,12 +74,13 @@ proc initSettings*(name = "";
                    maxShrinks = envInt("PROPTEST_MAX_SHRINKS", 2000);
                    maxChoices = defaultMaxChoices;
                    maxFailures = 3;
+                   maxSteps = 50;
                    seed = 0'u64): Settings =
   ## Defaults can be changed globally with environment variables (K2):
   ## `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`.
   Settings(name: name, cases: cases, maxSize: maxSize, maxDiscardRatio: maxDiscardRatio,
            maxShrinks: maxShrinks, maxChoices: maxChoices, maxFailures: maxFailures,
-           seed: seed)
+           maxSteps: maxSteps, seed: seed)
 
 proc validate*(s: Settings) =
   ## Raises `ValueError` describing the first invalid setting (K3).
@@ -87,6 +92,7 @@ proc validate*(s: Settings) =
   req s.maxShrinks >= 0, "maxShrinks must be >= 0"
   req s.maxChoices >= 1, "maxChoices must be >= 1"
   req s.maxFailures >= 1, "maxFailures must be >= 1"
+  req s.maxSteps >= 1, "maxSteps must be >= 1"
 
 proc passed*(r: PropertyResult): bool {.inline.} = r.status == psPassed
 
@@ -170,7 +176,7 @@ proc runProperty*(prop: PropertyProc; settings: Settings): PropertyResult =
         if f.signature == r.signature: known = true
       if not known:
         result.failures.add Failure(signature: r.signature, choices: src.choices,
-                                    message: r.message)
+                                    message: r.message, spans: src.spans)
   if result.failures.len == 0:
     result.status = psPassed
     return
@@ -184,19 +190,22 @@ proc runProperty*(prop: PropertyProc; settings: Settings): PropertyResult =
   var idx = 0
   while idx < failures.len:
     let target = failures[idx].signature
-    let probe: Probe = proc(candidate: seq[uint64]; used: var seq[uint64]): bool =
+    let probe: Probe = proc(candidate: seq[uint64]; used: var seq[uint64];
+                            spans: var seq[Span]): bool =
       src.startReplay(candidate, maxSize)
       let r = execute(prop, src)
       if r.outcome != ocFail: return false
       used = src.choices
+      spans = src.spans
       if r.signature == target: return true
       if failures.len < maxFailures:
         var known = false
         for f in failures:
           if f.signature == r.signature: known = true
         if not known:
-          failures.add Failure(signature: r.signature, choices: used, message: r.message)
-    var sh = initShrinker(failures[idx].choices, maxShrinks, probe)
+          failures.add Failure(signature: r.signature, choices: used, message: r.message,
+                               spans: spans)
+    var sh = initShrinker(failures[idx].choices, maxShrinks, probe, failures[idx].spans)
     sh.shrink()
     failures[idx].choices = sh.best
     failures[idx].shrinkExecutions = sh.executions
@@ -219,6 +228,8 @@ proc runProperty*(prop: PropertyProc; settings: Settings): PropertyResult =
       else:
         reproduced = false
     f.inputs = src.inputs
+    f.steps = src.steps
+    f.machine = src.machine
     if reproduced: anyReal = true
     else: f.flaky = true
   result.status = if anyReal: psFailed else: psFlaky

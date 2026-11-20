@@ -13,8 +13,8 @@ Rules of the check:
 | G1 | `Gen[T]` over a choice source | done | t_choices | n/a | |
 | G2 | Built-in generators | done | t_choices, t_gen | b_gen | integers incl. `range`, floats, bool, char, string, enum, seq, array, set, Option, tuple |
 | G3 | Generators inferred from types | done | t_gen | b_gen | `x in T`, user `arbitrary` overloads |
-| G4 | Object and distinct derivation | pending | | | v0.3 |
-| G5 | Tables, sets, refs | pending | | | v0.3 |
+| G4 | Object and distinct derivation | pending | | | v0.4 |
+| G5 | Tables, sets, refs | pending | | | v0.4 |
 | G6 | String alphabets | partial | t_gen | n/a | custom alphabets; Unicode pending |
 | G7 | Size control | done | t_choices | n/a | |
 | G8 | Edge-case bias | partial | t_choices, t_gen, t_values | n/a | integer and float limits; collection edge cases pending |
@@ -33,8 +33,8 @@ Rules of the check:
 | S5 | Shrink quality targets | done | t_values | b_shrink | integers to the exact boundary, shortest strings and lists |
 | R1 | Seed and replay command on failure | done | t_engine, t_integration | n/a | |
 | R2 | `PROPTEST_SEED` | done | t_integration | n/a | |
-| R3 | Failure database | pending | | | v0.4 |
-| R4 | Explicit examples | pending | | | v0.4 |
+| R3 | Failure database | pending | | | v0.5 |
+| R4 | Explicit examples | pending | | | v0.5 |
 | R5 | No global state between properties | done | t_prng, t_engine | n/a | |
 | A1 | `forAll(x in source)` | done | t_engine, t_integration | b_gen | ADR-0010 |
 | A2 | `assume` | done | t_choices, t_engine | n/a | |
@@ -43,15 +43,15 @@ Rules of the check:
 | A5 | Value printing | done | t_engine | n/a | |
 | A6 | `check`/`require` inside `forAll` | done | t_engine, t_integration | n/a | ADR-0009 |
 | A7 | `--panics:on` | done | t_integration | n/a | compile-time warning |
-| M1 | Model, system, commands | pending | | | v0.2 |
-| M2 | Random command sequences | pending | | | v0.2 |
-| M3 | Sequence shrinking | pending | | | v0.2 |
-| M4 | Failures as Nim code | pending | | | v0.2 |
-| M5 | Invariants | pending | | | v0.2 |
-| M6 | Injectable time | pending | | | v0.2 |
+| M1 | Model, system, commands | done | t_stateful | n/a | `stateMachine` macro; malformed machines rejected at compile time |
+| M2 | Random command sequences | done | t_stateful | b_gen | commands drawn among the enabled ones; arguments may read the model; 0 allocations per sequence |
+| M3 | Sequence shrinking | done | t_stateful, t_choices | b_shrink | steps are spans deleted whole (ADR-0011); value test on 20 seeds |
+| M4 | Failures as Nim code | done | t_stateful | n/a | `replayCommands` block compiled and run by a test; `showCode` |
+| M5 | Invariants | done | t_stateful | n/a | |
+| M6 | Injectable time | done | t_stateful | n/a | time as a command; exact boundary found |
 | M7 | Parallel linearizability | deferred | | | after 1.0 |
-| D1 | `classify` | pending | | | v0.3 |
-| D2 | `cover` | pending | | | v0.3 |
+| D1 | `classify` | pending | | | v0.3, ADR-0012 |
+| D2 | `cover` | pending | | | v0.3, ADR-0012 |
 | D3 | Size statistics | deferred | | | |
 | O1 | Quiet exploration | done | t_integration | n/a | |
 | O2 | Verbosity levels | pending | | | |
@@ -77,7 +77,7 @@ Rules of the check:
 | RL10 | Watchdog | deferred | | | |
 | RL11 | Health checks | partial | t_engine | n/a | filter rejection hint; other checks pending |
 | RL12 | Failure database robustness | pending | | | with R3 |
-| RL13 | Isolation in stateful tests | pending | | | with M1 |
+| RL13 | Isolation in stateful tests | done | t_stateful | n/a | fresh model and setup per sequence; teardown after failures |
 | RL14 | Shrinker invariants | done | t_shrink | n/a | |
 | RL15 | Stability policy | partial | t_gen | n/a | golden snapshot; written policy pending |
 | PF1 | Benchmark suite with baseline | done | bench | b_gen, b_shrink | |
@@ -101,7 +101,7 @@ Rules of the check:
 | DOC1 | README quickstart | done | doc | n/a | README snippets live in `examples/quickstart.nim` and `examples/tour.nim`, built and run in CI |
 | DOC2 | Writing generators guide | pending | | | |
 | DOC3 | Property patterns cookbook | pending | | | |
-| DOC4 | Stateful testing tutorial | pending | | | v0.2 |
+| DOC4 | Stateful testing tutorial | done | doc | n/a | [`STATEFUL.md`](STATEFUL.md); its example `examples/stateful.nim` runs in CI |
 | DOC5 | Configuration reference | pending | | | |
 | DOC6 | Troubleshooting | pending | | | |
 | DOC7 | CHANGELOG | done | doc | n/a | |

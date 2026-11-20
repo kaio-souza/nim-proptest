@@ -2,7 +2,7 @@
 
 A **property-based testing library for the [Nim](https://nim-lang.org) programming language**, distributed as a Nimble package. State a rule, let the library generate the inputs, and get the **smallest** input that breaks it.
 
-> **Status: v0.1, usable, not yet in the Nimble index.** Properties over built-in and custom types work today, with automatic shrinking and reproducible failures. Stateful testing comes in v0.2. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
+> **Status: v0.2, usable, not yet in the Nimble index.** Properties over built-in and custom types, and stateful (model-based) tests, work today, with automatic shrinking and reproducible failures. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
 
 ## Installation
 
@@ -41,7 +41,7 @@ The second property is wrong, and the report shows the **minimal** counterexampl
   Replay: PROPTEST_SEED=17542877672211577899 ./quickstart
 ```
 
-Runnable versions: [`examples/quickstart.nim`](examples/quickstart.nim) (with planted bugs) and [`examples/tour.nim`](examples/tour.nim) (every feature below; compiled and run in CI).
+Runnable versions: [`examples/quickstart.nim`](examples/quickstart.nim) (with planted bugs), [`examples/tour.nim`](examples/tour.nim) (every feature below) and [`examples/stateful.nim`](examples/stateful.nim) (the stateful tutorial); compiled and run in CI.
 
 ## Writing properties
 
@@ -81,6 +81,7 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 | Setting | Default | Meaning |
 |---|---|---|
 | `cases` | 100 | Cases to run |
+| `maxSteps` | 50 | Stateful tests: commands per sequence |
 | `maxShrinks` | 2000 | Execution budget for shrinking each failure |
 | `maxSize` | 100 | Size reached by the last case (bounds typical collection lengths) |
 | `maxDiscardRatio` | 10 | Give up after `cases × ratio` discarded cases |
@@ -167,10 +168,10 @@ Up to `maxFailures` **distinct** bugs (different exception type or location) are
 | `check`/`require` rewriting, `assume`, settings, environment variables | ✅ |
 | `std/unittest` integration; standalone use | ✅ |
 | Seed replay and crash breadcrumbs | ✅ (verified on Linux; macOS, Windows and JS pending in CI) |
-| Stateful / model-based testing | v0.2 |
-| Object generators derived automatically (no `arbitrary` needed) | v0.3 |
+| Stateful / model-based testing: `stateMachine`, shortest failing sequence printed as `replayCommands` code | ✅ |
+| Object generators derived automatically (no `arbitrary` needed) | v0.4 |
 | `classify` / `cover`, health checks beyond filters, per-case deadline | v0.3 |
-| Failure database (replay past failures first), `unittest2` adapter, JSON report | v0.4 |
+| Failure database (replay past failures first), `unittest2` adapter, JSON report | v0.5 |
 
 ## Known limitations
 
@@ -180,35 +181,60 @@ Up to `maxFailures` **distinct** bugs (different exception type or location) are
 - The values generated for a seed may change between versions before 1.0 (always listed in the [CHANGELOG](CHANGELOG.md)), so an old seed may not replay after an upgrade.
 - Generation speed is still above some targets (about 20 ns per `int` in release); see [measured performance](docs/ROADMAP.md#performance-against-the-initial-targets).
 
-## Stateful testing (planned for v0.2)
+## Stateful testing
 
-Random command sequences will run against the real system and a simple model; a failure is reported as the shortest failing sequence, printed as Nim code. Design sketch, not working code:
+Random command sequences run against the real system and a simple model; after every step both must agree. A failure is reported as the **shortest** failing sequence, printed as Nim code to paste as a regression test. Full tutorial: [`docs/STATEFUL.md`](docs/STATEFUL.md).
 
 ```nim
-stateMachine BoundedQueue:
-  model: Model
-  system: newBoundedQueue[int](capacity = 3)
+type Model = object
+  items: seq[int]
 
-  command push(x: int):
-    precondition: model.items.len < 3
-    run: system.push(x)
+stateMachine BoundedQueue:
+  model: Model()                            # fresh for every sequence
+  setup:
+    let q = newBoundedQueue[int](capacity = 3)
+
+  command push(x in ints(-10, 10)):
+    precondition: model.items.len < 3       # only valid sequences are generated
+    run: q.push(x)
     update: model.items.add x
 
   command pop():
     precondition: model.items.len > 0
-    run: system.pop()
-    postcondition: result == model.items[0]   # checked before `update`
+    run: q.pop()
+    postcondition: result == model.items[0] # checked before `update`
     update: model.items.delete(0)
 
-  invariant: system.len == model.items.len
+  invariant: q.len == model.items.len
+
+test "queue matches its model":
+  checkStateMachine(BoundedQueue)
 ```
+
+With a queue whose `pop` is wrong after exactly 3 pushes and 1 pop:
+
+```
+  Shortest failing sequence (4 steps, 12 choices, 115 shrink executions):
+    replayCommands BoundedQueue:
+      push(0)
+      push(0)
+      push(0)
+      pop()
+  Error: [PropertyFailed] check failed: result == model.items[0]
+      result was 1
+      model.items[0] was 0
+  Failed at step 4: pop()
+```
+
+Time is a command (`command advance(ms in ints(0, 2000))` moving a fake clock), so time-based bugs shrink to exact waits. `teardown:` always runs; arguments may be drawn from the model (`k in elements(model.keys)`).
 
 ## Quality
 
-- 72 tests, passing on `orc`/`arc` × threads on/off × debug/release; ASan, UBSan and leak checks clean.
+- 87 tests, passing on `orc`/`arc` × threads on/off × debug/release; ASan, UBSan and leak checks clean.
 - The PRNG and hash match the authors' reference C implementations and the official FNV-1a vectors (golden tests).
 - Value tests: each reference bug of the [SPEC](docs/SPEC.md) shrinks to its exact minimal counterexample; two independent bugs are both reported, and shrinking never slips from one bug to another (checked on 20 seeds).
-- Deterministic gates in CI: shrinking each reference bug takes 17 to 113 executions (baseline in `benchmarks/baseline/shrink.json`), and drawing choices never allocates.
+- Deterministic gates in CI: shrinking each reference bug takes 17 to 205 executions (baseline in `benchmarks/baseline/shrink.json`); drawing choices and running stateful steps never allocate.
+- First external user: the [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) model test runs 1000 random sequences against its breaker.
 - Every requirement has a row in [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md), checked by `nimble trace`. Design decisions: [`docs/decisions/`](docs/decisions/README.md).
 
 ```sh

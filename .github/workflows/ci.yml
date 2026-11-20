@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for t in t_prng t_choices t_gen t_shrink t_engine t_values; do
+          for t in t_prng t_choices t_gen t_shrink t_engine t_values t_stateful; do
             nim c -r --hints:off --mm:${{ matrix.mm }} -d:useMalloc --debugger:native \
               --passC:-fsanitize=address,undefined --passC:-fno-sanitize-recover=undefined \
               --passC:-fno-omit-frame-pointer --passL:-fsanitize=address,undefined \
@@ -78,6 +78,8 @@ jobs:
         run: |
           nim c --hints:off -o:/tmp/tour examples/tour.nim
           PROPTEST_DB=off /tmp/tour
+          nim c --hints:off -o:/tmp/stateful examples/stateful.nim
+          PROPTEST_DB=off /tmp/stateful
           # quickstart has planted bugs: it must report them and fail.
           nim c --hints:off -o:/tmp/quickstart examples/quickstart.nim
           if PROPTEST_DB=off /tmp/quickstart; then

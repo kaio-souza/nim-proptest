@@ -41,10 +41,18 @@ type
     phase*: CasePhase
     recordInputs*: bool
     inputs*: seq[tuple[name, value: string]]
+    spans: seq[Span]        # reused buffer; see `addSpan`
+    steps*: seq[string]     # stateful tests: steps as Nim code (recordInputs)
+    machine*: string        # stateful tests: machine name (recordInputs)
+
+  Span* = tuple[start, stop: int]
+    ## Choices `start ..< stop` that make one element of a collection or one
+    ## step of a stateful sequence. The shrinker tries to delete them whole.
 
   Many* = object
     ## State of a variable-length collection being generated (see `more`).
     minLen, maxLen, target, count: int
+    elemStart: int          # first choice of the current element, or -1
 
 const
   defaultMaxChoices* = 8192
@@ -73,6 +81,7 @@ proc newChoiceSource*(seed: uint64; maxChoices = defaultMaxChoices): ChoiceSourc
   result = ChoiceSource(rng: initXoshiro256(seed), maxChoices: maxChoices)
   result.buf = newSeq[uint64](maxChoices)
   result.prefix = newSeqOfCap[uint64](maxChoices)
+  result.spans = newSeqOfCap[Span](64)
 
 proc resetCase(src: ChoiceSource; size: int) {.inline.} =
   src.count = 0
@@ -81,6 +90,8 @@ proc resetCase(src: ChoiceSource; size: int) {.inline.} =
   src.phase = cpGenerate
   src.recordInputs = false
   src.inputs.setLen(0)
+  src.spans.setLen(0)
+  src.steps.setLen(0)
 
 proc startRandom*(src: ChoiceSource; size: int) =
   ## Prepares a new exploration case of the given size.
@@ -102,6 +113,15 @@ proc choices*(src: ChoiceSource): seq[uint64] =
 proc choiceCount*(src: ChoiceSource): int {.inline.} =
   ## Number of choices consumed by the current case so far.
   src.count
+
+proc spans*(src: ChoiceSource): seq[Span] =
+  ## Copy of the spans recorded by the current case so far.
+  src.spans
+
+proc addSpan*(src: ChoiceSource; start, stop: int) {.inline.} =
+  ## Records choices `start ..< stop` as one deletable unit. Reuses the
+  ## buffer's capacity across cases.
+  if stop > start: src.spans.add (start, stop)
 
 proc size*(src: ChoiceSource): int {.inline.} =
   ## Current size: grows over a run, bounds typical collection lengths.
@@ -280,7 +300,7 @@ proc drawFloatRange*(src: ChoiceSource; lo, hi: float): float =
 proc initMany*(src: ChoiceSource; minLen, maxLen: int): Many =
   ## Starts a collection with `minLen .. maxLen` elements. While exploring, a
   ## target length is picked from the current size; it costs no choice.
-  result = Many(minLen: minLen, maxLen: maxLen, target: minLen)
+  result = Many(minLen: minLen, maxLen: maxLen, target: minLen, elemStart: -1)
   if src.mode == smRandom and maxLen > minLen:
     let extra = uint64(maxLen - minLen)
     let typical = uint64(2 * max(src.size, 1))
@@ -290,15 +310,29 @@ proc initMany*(src: ChoiceSource; minLen, maxLen: int): Many =
 proc more*(src: ChoiceSource; m: var Many): bool =
   ## Whether to add one more element. Each optional element costs one choice
   ## (1 = continue), so deleting choices deletes elements when shrinking.
+  ## Each element, with its continue choice, is recorded as a span.
+  if m.elemStart >= 0:
+    src.addSpan(m.elemStart, src.count)
+  m.elemStart = src.count
   if m.count < m.minLen:
     inc m.count
     return true
   if m.count >= m.maxLen:
+    m.elemStart = -1
     return false
   let v = drawImpl(src, 1, (if m.count < m.target: 1'u64 else: 0'u64))
   if v == 1:
     inc m.count
     result = true
+  else:
+    m.elemStart = -1
+
+proc endElement*(src: ChoiceSource; m: var Many) {.inline.} =
+  ## Closes the span of the current element now instead of at the next
+  ## `more` call (used when an element may end the case, as a stateful step).
+  if m.elemStart >= 0:
+    src.addSpan(m.elemStart, src.count)
+    m.elemStart = -1
 
 proc assume*(cond: bool) =
   ## Discards the current case when `cond` is false (A2).

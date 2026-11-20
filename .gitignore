@@ -25,3 +25,6 @@ htmldocs/
 # Editor
 .idea/
 .vscode/
+
+# Written by t_stateful (a report's replay block, compiled as is)
+tests/fixtures/f_replay_gen.nim

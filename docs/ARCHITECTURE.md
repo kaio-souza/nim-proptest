@@ -15,6 +15,8 @@ Ties the ADRs into one picture of how a property runs. Modules marked *(planned)
 | **Shrinking** | Searching for a smaller choice sequence that fails with the same signature. |
 | **Shortlex order** | Shorter sequence is smaller; same length compares choice by choice. Shrinking only moves down this order. |
 | **Flaky** | A property whose final counterexample does not fail again in both re-runs. |
+| **Span** | Choices that make one collection element or one stateful step, with its "continue" choice; the shrinker deletes it whole ([ADR-0011](decisions/0011-stateful-testing.md)). |
+| **Step** | One command of a stateful sequence, with its arguments; printed as a Nim call. |
 | **Failure database** | `.proptest/` directory with the minimal sequences of past failures ([ADR-0003](decisions/0003-reproducibility-and-failure-database.md)). |
 
 ## Modules
@@ -33,7 +35,7 @@ src/
     report.nim                 # text report
     database.nim               # run seed, crash breadcrumbs (ADR-0003); failure database (planned)
     derive.nim                 # (planned) compile-time generators for objects and distinct types
-    stateful.nim               # (planned, v0.2) models, commands, sequence generation
+    stateful.nim               # stateMachine and replayCommands macros, sequence runner (ADR-0011)
     unittest2.nim              # (planned) optional adapter, explicit import (ADR-0002)
 ```
 
@@ -49,7 +51,7 @@ Every generator is built from these `ChoiceSource` procs; each records one choic
 | `drawMagnitude(max)` | `0 .. max`, biased to small values and boundaries while exploring | 0 |
 | `drawInt(lo, hi)` | optional sign choice + magnitude from the value closest to 0 | value closest to 0, positive before negative |
 | `drawFloat` / `drawFloatRange` | kind (finite or special), sign, whole part, fraction, scale | 0.0 |
-| `initMany` + `more` | one "continue" choice per optional element | empty collection |
+| `initMany` + `more` | one "continue" choice per optional element; each element recorded as a span | empty collection |
 
 The random distribution (what is likely while exploring) and the shrink order (what is simple) are independent: the bias lives only in random mode, and replay just reads choices.
 
@@ -68,11 +70,31 @@ forAll(...)
        ├─ ok / discarded (assume) / failed (signature) / generator error
        └─ health checks: discard ratio and filter rejections (generation time and sizes planned)
   on failure, for each distinct signature (up to the limit):
-       ├─ shrink the sequence: delete, zero, lower (binary search), then merge spans
+       ├─ shrink the sequence: delete spans (elements, steps), delete chunks, zero,
+       │    lower (binary search), then merge
        │    accept candidate only if smaller in shortlex AND same signature
        ├─ re-run the minimal sequence twice: fails both times → counterexample; otherwise → flaky
        ├─ save the sequence to the failure database
        └─ report: inputs, error, seed, replay command, statistics
+```
+
+## Life of a stateful sequence
+
+A machine is a property whose input is a command sequence ([ADR-0011](decisions/0011-stateful-testing.md)); the engine above runs it unchanged.
+
+```
+stateMachine M:              (one runner closure, commands inlined in a case)
+  ├─ model := fresh model expression; setup statements (fresh system)
+  ├─ loop:
+  │    ├─ enabled := commands whose precondition holds on the model
+  │    ├─ none enabled, or "continue" choice is 0 → stop
+  │    ├─ draw the command among the enabled ones, then its arguments
+  │    ├─ run; postcondition (result vs model, before update); update model
+  │    ├─ invariant
+  │    └─ close the step's span
+  └─ teardown (always, once setup succeeded)
+replayCommands M: the same runner, fed with given steps; a violated
+precondition raises ValueError instead of being skipped.
 ```
 
 ## Tests and benchmarks
