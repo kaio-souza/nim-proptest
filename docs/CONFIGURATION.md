@@ -22,15 +22,17 @@ forAll(xs in seq[int]):
 **More cases in CI than on your machine.** Use the environment, not the code, so local runs stay fast:
 
 ```sh
-PROPTEST_CASES=1000 PROPTEST_REPORT=proptest-report.jsonl nimble test
+PROPTEST_CASES=1000 PROPTEST_HANG_TIMEOUT=60000 PROPTEST_REPORT=proptest-report.jsonl nimble test
 ```
+
+`PROPTEST_HANG_TIMEOUT` turns on the watchdog: a case that never returns ends the run with a report instead of running until the CI job's time limit.
 
 A property that sets `cases` itself ignores `PROPTEST_CASES` (see [precedence](#how-a-value-is-chosen)): leave `cases` out of properties you want CI to scale.
 
 **A nightly deep run.** Many more cases, bounded by time so a slow property cannot take the night:
 
 ```sh
-PROPTEST_CASES=100000 PROPTEST_TIME_BUDGET=60000 PROPTEST_VERBOSITY=quiet nimble test
+PROPTEST_CASES=100000 PROPTEST_TIME_BUDGET=60000 PROPTEST_HANG_TIMEOUT=60000 PROPTEST_VERBOSITY=quiet nimble test
 ```
 
 `timeBudget` is per property: each stops after 60 s with a warning that says how many cases ran.
@@ -163,10 +165,13 @@ Raise it when a bug needs long inputs (a buffer that fills at 256 elements); low
 |---|---|---|---|
 | `deadline` | 0 (off) | `PROPTEST_DEADLINE` | >= 0 ms |
 | `timeBudget` | 0 (none) | `PROPTEST_TIME_BUDGET` | >= 0 ms |
+| `hangTimeout` | 0 (off) | `PROPTEST_HANG_TIMEOUT` | >= 0 ms; 0 is off |
 
-**`deadline`**: a case that takes longer fails with `DeadlineExceeded`, and is shrunk like any failure: to the smallest input that is still slow. Use it to find performance cliffs (quadratic behavior on some input). While exploring, a case is allowed 1.25 × the deadline, so one just over it does not become a flaky report. Trade-off: timings vary between machines and under load, so set it well above normal case times, especially in CI. It does not stop a case that never returns: that needs a watchdog thread (planned).
+**`deadline`**: a case that takes longer fails with `DeadlineExceeded`, and is shrunk like any failure: to the smallest input that is still slow. Use it to find performance cliffs (quadratic behavior on some input). While exploring, a case is allowed 1.25 × the deadline, so one just over it does not become a flaky report. Trade-off: timings vary between machines and under load, so set it well above normal case times, especially in CI. It does not stop a case that never returns: `hangTimeout` does.
 
 **`timeBudget`**: a time cap on exploration, per property. When it hits, the property stops and reports what it did: a passing property says "time budget of N ms reached after K of M cases" as a warning. It keeps CI time bounded at the cost of fewer cases on slow machines.
+
+**`hangTimeout`**: a case that has not returned after this long (an infinite loop, a deadlock) is reported by a watchdog thread, which then **ends the process** with exit code 1: a running case cannot be interrupted safely, so there is no way to continue the run. The report names the property, what was running (exploring, shrinking, a saved case), the case's choices and the replay command; the case is saved in the failure database, so the next run replays it first and prints its inputs. A `hung` line is appended to the JSON report. **Off by default**, so stepping through a case in a debugger or a property that is legitimately slow never ends the process by surprise. Turn it on where a hang costs the most, in CI, well above your slowest normal case: `PROPTEST_HANG_TIMEOUT=60000`. Without it, a case that never returns hangs the run until it is stopped ([then](TROUBLESHOOTING.md#the-test-hangs)). The watchdog needs `--threads:on` (Nim 2's default) and watches one property at a time: properties run concurrently on other threads are not watched. [What to do when it fires](TROUBLESHOOTING.md#the-test-hangs).
 
 ### Output
 
@@ -220,6 +225,7 @@ Give a name to properties you refer to elsewhere (a bug tracker, a CI dashboard)
 | `PROPTEST_MAX_SHRINKS` | default `maxShrinks` | integer | slow properties in CI |
 | `PROPTEST_DEADLINE` | default `deadline` | integer, ms | catch slow cases in CI |
 | `PROPTEST_TIME_BUDGET` | default `timeBudget` | integer, ms | bound nightly runs |
+| `PROPTEST_HANG_TIMEOUT` | default `hangTimeout` | integer, ms; 0 (default) is off | turn the watchdog on in CI: a hang fails with a report |
 | `PROPTEST_VERBOSITY` | default `verbosity` | `quiet`, `normal`, `verbose`, `debug` | look at generated inputs |
 | `PROPTEST_REPORT` | default `report` | file path | JSON for CI tools |
 | `PROPTEST_DB` | directory of local files | path, or `off` | move or disable `.proptest/` |

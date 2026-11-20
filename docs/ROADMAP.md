@@ -8,11 +8,11 @@ Work is planned by **theme and priority, not by version**. Most themes take a da
 
 ## Where we are
 
-**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (97 requirements, 90 done or partial, all with evidence).
+**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (97 requirements, 91 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
-| Tests | 155, all passing on orc/arc × threads on/off × debug/release, on Linux, macOS and Windows |
+| Tests | 158, all passing on orc/arc × threads on/off × debug/release, on Linux, macOS and Windows |
 | Sanitizers | ASan, UBSan and leak checks clean on orc and arc |
 | Golden tests | PRNG and hash match the authors' reference C code and the official FNV-1a vectors; generated values pinned for seed 42 |
 | Value tests | the reference bugs of SPEC Part IV shrink to their exact minima, including the stateful queue (4 steps, 20/20 seeds); multiple bugs and no slippage verified on 20 seeds each (100/100 on 100 seeds) |
@@ -140,6 +140,16 @@ New API only: the shrink and detection baselines are identical, number for numbe
 
 Found while building it: case objects whose discriminant is a `range` type cannot be derived with Nim 2.2.4 (assigning it crashes the compiler, and it has no address): a clear compile error says to use an enum or write `arbitrary`. The failure database is off by default in the library's own tests and benchmarks (`-d:proptestDb=off`), which need repeatable runs.
 
+### Cases that never return
+
+A case that never returns used to hang the whole test program; in CI, until the job's time limit, with no clue. Design: [ADR-0017](decisions/0017-watchdog.md).
+
+- [x] Watchdog thread (RL10, moved here from after 1.0): after `hangTimeout` (off by default; `PROPTEST_HANG_TIMEOUT`, recommended in CI) it reports the property, what was running, the choices and the replay command, saves the case in the failure database and ends the process with exit code 1; a `hung` line goes to the JSON report
+- [x] The next run replays the hung case first with its inputs recorded, so a case that still hangs is reported with `x = 42` (or the stateful steps, the last one being the step that does not return)
+- [x] Cost: one atomic increment per case; needs `--threads:on` (Nim 2's default)
+
+Not done: shrinking a hang. It would need one child process per shrink step, each still-hanging step costing a full timeout (ADR-0017).
+
 ## Performance against the targets
 
 Measured on an Intel Core i5-10210U laptop, Nim 2.2.4, ORC. The machine is noisy (repeated runs vary by up to 2×), so the numbers come from A/B runs: the previous and the current code alternated 15 times, pinned to one core, minimum kept.
@@ -167,7 +177,6 @@ All P0 and P1 requirements implemented and tested; benchmarks published; CI on L
 ## After 1.0
 
 - [~] M7 parallel linearizability checking
-- [~] RL10 watchdog thread
 - [~] F1 fuzzing bridge
 - [~] I4 async properties
 - [~] PF3 parallel case execution

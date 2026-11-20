@@ -7,6 +7,21 @@ All notable changes. Versions follow semantic versioning. Any change to the valu
 Everything since the last tag (v0.2.0). Work is grouped by theme, not by
 version: a release is cut when it is worth one, not per theme.
 
+### Cases that never return
+
+#### Added
+- Watchdog (RL10, ADR-0017): when a case runs longer than `hangTimeout`
+  (off by default; set `PROPTEST_HANG_TIMEOUT`, e.g. in CI), a thread
+  reports the property, what was running, the case's choices and the replay
+  command, saves the case in the failure database, appends a `"status":
+  "hung"` line to the JSON report, and ends the process with exit code 1.
+  The next run replays the case first and prints its inputs (or the
+  stateful steps). Needs `--threads:on`, Nim 2's default.
+
+#### Changed
+- Saved failures and explicit examples are replayed with their inputs
+  recorded (they are few), so the watchdog can print them.
+
 ### Generation changes, together
 
 One batch of everything that changes the values generated for a seed, so

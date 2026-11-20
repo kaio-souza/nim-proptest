@@ -35,6 +35,8 @@ src/
     shrink.nim                 # shrink passes on choice sequences, tried-sequence cache
     engine.nim                 # Settings, run loop: explore, shrink, double re-run, results; JSON report (O3)
     report.nim                 # text report
+    jsonout.nim                # JSON Lines writing for the report (O3), shared with the watchdog
+    watchdog.nim               # thread that reports a case that never returns, then ends the process (RL10, ADR-0017)
     database.nim               # run seed, crash breadcrumbs (ADR-0003); failure database (ADR-0014)
     stateful.nim               # stateMachine and replayCommands macros, sequence runner, swarm (ADR-0011, ADR-0012)
     labels.nim                 # classify / cover / label rewriting into compile-time slots (ADR-0012)

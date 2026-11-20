@@ -58,6 +58,8 @@ proc writeBreadcrumb*(seed: uint64) =
 const
   dbHeader = "proptest-db 1"
   dbPassesToForget* = 3
+  hungMark* = -1
+    ## `passes` of a case saved by the watchdog (RL10): it did not return.
     ## A saved failure is forgotten after passing this many runs in a row.
 
 type DbEntry* = object

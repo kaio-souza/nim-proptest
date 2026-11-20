@@ -20,6 +20,7 @@ Each file records one decision: its context, what was decided, the consequences,
 | [0014](0014-failure-database-and-examples.md) | Failure database (replay past failures first) and explicit examples | Accepted |
 | [0015](0015-stability-policy.md) | Stability policy: generation changes only in minor releases, enforced by a golden snapshot of the whole pipeline | Accepted |
 | [0016](0016-targeted-exploration.md) | Targeted exploration: `target(score)` extends the best case so far, for deep states | Accepted |
+| [0017](0017-watchdog.md) | Watchdog: a case that never returns is reported and saved, then the process ends | Accepted |
 
 ## Template
 

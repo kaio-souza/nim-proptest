@@ -132,21 +132,31 @@ Property 'slow' falsified at case 2 (80 cases passed, 0 discarded).
 
 ### The test hangs
 
-**Why.** A case never returns (an infinite loop, a deadlock). `deadline` cannot stop it: it measures a case after it returns.
+```
+proptest: property 'hangs on 42' did not return: a case has run for more than 300 ms (hangTimeout) while exploring (case 1), running the property.
+  Inputs: not recorded while exploring (formatting them would cost time on every case).
+  The case was saved in the failure database: the next run replays it first and
+  prints its inputs here if it still does not return.
+  Choices (1): 42
+  Replay: PROPTEST_SEED=1 ./t_hang
+  The process stops here (exit code 1): a running case cannot be interrupted safely.
+```
+
+**Why.** A case never returns: an infinite loop, a deadlock, a wait for an event that never comes. `deadline` cannot catch it, because it measures a case after it returns. The watchdog is off by default, so the run just hangs. With `PROPTEST_HANG_TIMEOUT` set (above, 300 ms), after that long the watchdog thread reports the case and ends the process: nothing can interrupt a running case safely, so the run cannot go on and the case cannot be shrunk.
 
 **What to do.**
 
-1. Stop the process. The run seed was written before the first case:
-   ```sh
-   cat .proptest/last-run        # PROPTEST_SEED=... and the command
+1. If the run just hangs with no report, stop it and run it again with the watchdog on, e.g. `PROPTEST_HANG_TIMEOUT=10000 nimble test` (the same seed comes from `.proptest/last-run`: `PROPTEST_SEED=<it>`). Then run the tests once more. The case was saved, so it runs first, with its inputs recorded:
    ```
-2. Replay with that seed and with the case inputs printed. `PROPTEST_VERBOSITY=verbose` prints each case **after** it returns, so its last line is the case before the hanging one. To see the hanging case itself, print the inputs at the top of the body while you investigate:
-   ```nim
-   forAll(xs in seq[int]):
-     echo "trying ", xs        # temporary
-     ...
+   proptest: property 'hangs on 42' did not return: ... while replaying a case that hung in an earlier run (case 1), running the property.
+     Inputs:
+       x = 42
    ```
-3. Once you know the input, turn it into an `example(...)` or a plain test, fix the loop, and remove the `echo`.
+   A state machine shows the steps instead, the last one being the step that does not return. With `PROPTEST_DB=off` there is nothing saved: replay with the seed and `PROPTEST_VERBOSITY=verbose`, which records inputs on every case.
+2. Turn the input into a regular test, or an `example(...)`, and fix the loop. Once the saved case passes, it is forgotten after three runs.
+3. In CI, keep the watchdog on, so a hang fails with this report instead of hitting the job's time limit: `PROPTEST_HANG_TIMEOUT=60000`.
+
+Without `--threads:on` (Nim 2's default is on) there is no watchdog: stop the process, then replay with the seed in `.proptest/last-run` and `PROPTEST_VERBOSITY=verbose`; the last case printed is the one before the hanging one.
 
 ### The process ends with no report
 

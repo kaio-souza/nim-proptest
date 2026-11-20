@@ -173,3 +173,19 @@ suite "engine":
     check line.count('\n') == 0
     let j = parseJson(line)
     check j["name"].getStr == "esc\t\x01éÿ"
+
+  test "RL10/K3: fast cases never trigger the watchdog; hangTimeout is validated":
+    # A watchdog that fired here would end this test program.
+    var n = 0
+    let r = forAllResult(initSettings(seed = 18, cases = 3000, hangTimeout = 25), xs in seq[int]):
+      n += xs.len
+    check r.passed
+    expect ValueError:
+      validate(initSettings(hangTimeout = -1))
+    # Off by default; the environment turns it on (CI sets it).
+    let env = getEnv("PROPTEST_HANG_TIMEOUT")
+    delEnv("PROPTEST_HANG_TIMEOUT")
+    check initSettings().hangTimeout == 0
+    putEnv("PROPTEST_HANG_TIMEOUT", "1234")
+    check initSettings().hangTimeout == 1234
+    if env.len > 0: putEnv("PROPTEST_HANG_TIMEOUT", env) else: delEnv("PROPTEST_HANG_TIMEOUT")

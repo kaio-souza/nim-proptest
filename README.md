@@ -113,7 +113,7 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 
 ### JSON report for CI
 
-`PROPTEST_REPORT=proptest-report.jsonl nimble test` appends one line of JSON per property to that file (it is created with its directory; several test programs can share it). Each line has `format` (1), `name`, `status` (`passed`, `failed`, `flaky`, `gaveUp`, `generatorError`, `insufficientCoverage`), `passed`, `seed` (a string: it does not fit a JSON number), `program`, `replay` (the command that replays the run), `casesPassed`, `discarded`, `firstFailureAt`, `durationMs`, `message`, `labeledCases`, `labels` (`name`, `kind`, `cases`, `events`, `required` for `cover`), `warnings`, and `failures`: `kind` and `location` (the failure signature), `message`, `source` (`explored`, `database`, `example`), `flaky`, `choices`, `shrinkExecutions`, `shrinkStopped`, `inputs` (`name`, `value`), `machine` and `steps` for state machines, `stackTrace`. Fields may be added; a field that changes meaning or goes away raises `format`.
+`PROPTEST_REPORT=proptest-report.jsonl nimble test` appends one line of JSON per property to that file (it is created with its directory; several test programs can share it). Each line has `format` (1), `name`, `status` (`passed`, `failed`, `flaky`, `gaveUp`, `generatorError`, `insufficientCoverage`, or `hung` from the [watchdog](docs/TROUBLESHOOTING.md#the-test-hangs), whose line has fewer fields), `passed`, `seed` (a string: it does not fit a JSON number), `program`, `replay` (the command that replays the run), `casesPassed`, `discarded`, `firstFailureAt`, `durationMs`, `message`, `labeledCases`, `labels` (`name`, `kind`, `cases`, `events`, `required` for `cover`), `warnings`, and `failures`: `kind` and `location` (the failure signature), `message`, `source` (`explored`, `database`, `example`), `flaky`, `choices`, `shrinkExecutions`, `shrinkStopped`, `inputs` (`name`, `value`), `machine` and `steps` for state machines, `stackTrace`. Fields may be added; a field that changes meaning or goes away raises `format`.
 
 ```sh
 jq -r 'select(.passed | not) | "\(.name): \(.status), \(.replay)"' proptest-report.jsonl
@@ -258,11 +258,12 @@ forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 | Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
 | Configuration reference and troubleshooting guide, checked against the code in CI | ✅ |
 | Stability policy: a seed replays across patch releases, checked by a golden snapshot ([STABILITY.md](docs/STABILITY.md)) | ✅ |
-| `sized`, `unique`, `sortedSeq`, faster generation (one batch of generation changes) | next ([roadmap](docs/ROADMAP.md)) |
+| `sized`, `resize`, `uniqueSeqs`, `sortedSeqs`, targeted exploration (`target`), faster generation | ✅ |
+| Watchdog (opt-in, `PROPTEST_HANG_TIMEOUT`): a case that never returns is reported (inputs, choices, replay) and saved, instead of hanging the run | ✅ (needs `--threads:on`, Nim's default) |
 
 ## Known limitations
 
-- **A case that never returns hangs the test**: `deadline` catches slow cases, but stopping one that loops forever needs a watchdog thread (planned after 1.0). The seed is already in `.proptest/last-run` to replay it.
+- **A case that never returns hangs the run, unless the watchdog is on**: with `PROPTEST_HANG_TIMEOUT=60000` (recommended in CI; off by default) it is reported and saved after that long, then the program exits with code 1, because a running case cannot be interrupted safely. It cannot be shrunk, and its inputs are printed on the next run (or at once with `PROPTEST_VERBOSITY=verbose`). Without `--threads:on` there is no watchdog.
 - **Deep states are still hard**: a state that needs a long, specific path (five reopenings of a breaker in a row, each after the right wait) is seldom reached by random sequences. `target(score)` helps when the property can measure progress (3 → 20 of 100 seeds for the breaker); for a path you already know, write it as a `replayCommands` test.
 - **`--panics:on`**: `Defect`s end the process at the first failing case, so it cannot be shrunk (a compile-time warning says so).
 - A broad `except CatchableError` inside the property body also catches the library's internal signals (`assume`, failed `check`); re-raise them or catch narrower types.

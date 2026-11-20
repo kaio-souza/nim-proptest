@@ -144,6 +144,36 @@ suite "integration":
     check "done" in r.output
     check not fileExists(fixturesDir / "report.jsonl")
 
+  test "RL10: a case that never returns is reported, saved, and shown with its inputs next run":
+    check compileFixture("f_hang").ok
+    let dir = getTempDir() / ("proptest_hang_" & $getCurrentProcessId())
+    removeDir(dir)
+    let env = {"PROPTEST_HANG_TIMEOUT": "300", "PROPTEST_DB": dir / "db",
+               "PROPTEST_REPORT": dir / "report.jsonl"}
+    let first = runFixture("f_hang", env)
+    check first.code == 1
+    check "property 'hangs on 42' did not return" in first.output
+    check "more than 300 ms (hangTimeout) while exploring" in first.output
+    check "Choices (1): 42" in first.output
+    check "Replay: PROPTEST_SEED=1 " in first.output
+    check "saved in the failure database" in first.output
+    check "not reached" notin first.output
+    let second = runFixture("f_hang", env)
+    check second.code == 1
+    check "replaying a case that hung in an earlier run" in second.output
+    check "    x = 42" in second.output
+    let lines = readFile(dir / "report.jsonl").strip.splitLines
+    check lines.len == 2
+    check parseJson(lines[0])["status"].getStr == "hung"
+    removeDir(dir)
+
+  test "RL10: with verbose output the inputs are shown on the first run":
+    check compileFixture("f_hang").ok
+    let r = runFixture("f_hang", {"PROPTEST_HANG_TIMEOUT": "300", "PROPTEST_DB": "off",
+                                  "PROPTEST_VERBOSITY": "verbose"})
+    check r.code == 1
+    check "    x = 42" in r.output
+
   test "A1: `name = gen` is rejected at compile time with the right form":
     let (buildLog, ok) = compileFixture("f_badsyntax")
     check not ok

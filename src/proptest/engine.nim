@@ -1,8 +1,9 @@
 ## Run loop of a property: generate, execute, shrink, re-run, report.
 
 import std/[os, strutils, math, monotimes, times, hashes]
-from std/unicode import runeLenAt, validateUtf8
-import prng, choices, signature, shrink, database
+import prng, choices, signature, shrink, database, jsonout, watchdog
+
+export reportFormat
 
 export signature
 
@@ -34,6 +35,7 @@ type
     suppress*: set[HealthCheck] ## Health checks not to run (RL11).
     maxDepth*: int         ## Nesting depth of recursive data while exploring (ADR-0013).
     report*: string        ## JSON Lines file the result is appended to; empty = none (O3). `PROPTEST_REPORT`.
+    hangTimeout*: int      ## A case running longer (ms) is reported and the process ends (RL10); 0 (default) = off. `PROPTEST_HANG_TIMEOUT`.
     seed*: uint64          ## Run seed; 0 uses `PROPTEST_SEED` or a random one.
 
   HealthCheck* = enum
@@ -132,6 +134,7 @@ proc initSettings*(name = "";
                    suppress: set[HealthCheck] = {};
                    maxDepth = defaultMaxDepth;
                    report = getEnv("PROPTEST_REPORT");
+                   hangTimeout = envInt("PROPTEST_HANG_TIMEOUT", 0);
                    seed = 0'u64): Settings =
   ## Defaults can be changed globally with environment variables (K2):
   ## `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`,
@@ -142,7 +145,7 @@ proc initSettings*(name = "";
            edgeBias: edgeBias, mineConstants: mineConstants,
            deadline: deadline, timeBudget: timeBudget,
            shrinkTimeBudget: shrinkTimeBudget, suppress: suppress, maxDepth: maxDepth,
-           report: report, seed: seed)
+           report: report, hangTimeout: hangTimeout, seed: seed)
 
 proc validate*(s: Settings) =
   ## Raises `ValueError` describing the first invalid setting (K3).
@@ -160,6 +163,7 @@ proc validate*(s: Settings) =
   req s.maxDepth >= 0, "maxDepth must be >= 0"
   req s.timeBudget >= 0, "timeBudget must be >= 0 (ms; 0 means none)"
   req s.shrinkTimeBudget >= 0, "shrinkTimeBudget must be >= 0 (ms; 0 means none)"
+  req s.hangTimeout >= 0, "hangTimeout must be >= 0 (ms; 0 disables the watchdog)"
 
 proc passed*(r: PropertyResult): bool {.inline.} = r.status == psPassed
 
@@ -258,55 +262,6 @@ proc sizeFor(s: Settings; attempt: int): int {.inline.} =
 
 # --------------------------------------------------------- JSON report (O3)
 
-const reportFormat* = 1
-  ## Version of the JSON report; raised when a field changes meaning or goes away.
-
-proc addJson(o: var string; s: string) =
-  ## `s` as a JSON string. Bytes that are not valid UTF-8 (a raw byte in an
-  ## exception message) become `\u00XX`, so the line stays valid JSON.
-  o.add '"'
-  var i = 0
-  while i < s.len:
-    let c = s[i]
-    case c
-    of '"': o.add "\\\""
-    of '\\': o.add "\\\\"
-    of '\n': o.add "\\n"
-    of '\r': o.add "\\r"
-    of '\t': o.add "\\t"
-    of '\0' .. '\x08', '\x0B', '\x0C', '\x0E' .. '\x1F', '\x7F':
-      o.add "\\u00" & toHex(ord(c), 2)
-    of ' ', '!', '#' .. '[', ']' .. '~':
-      o.add c
-    of '\x80' .. '\xFF':
-      let size = runeLenAt(s, i)
-      let chunk = s[i ..< min(s.len, i + size)]
-      if chunk.len == size and validateUtf8(chunk) == -1:
-        o.add chunk
-        i += size
-        continue
-      o.add "\\u00" & toHex(ord(c), 2)
-    inc i
-  o.add '"'
-
-proc addJson(o: var string; key: string; value: string) =
-  o.addJson(key)
-  o.add ':'
-  o.addJson(value)
-
-proc addJson(o: var string; key: string; value: int | bool | float) =
-  o.addJson(key)
-  o.add ':'
-  o.add $value
-
-proc addJson(o: var string; key: string; values: seq[string]) =
-  o.addJson(key)
-  o.add ":["
-  for i, v in values:
-    if i > 0: o.add ','
-    o.addJson(v)
-  o.add ']'
-
 proc statusName(s: PropertyStatus): string =
   case s
   of psPassed: "passed"
@@ -393,16 +348,7 @@ proc toJsonLine*(r: PropertyResult; durationMs = 0.0): string =
 proc appendReport*(path: string; r: PropertyResult; durationMs = 0.0) =
   ## Appends `r` to the JSON Lines file `path`, creating it and its directory.
   ## One write per line, so runs of several test programs share the file.
-  let line = toJsonLine(r, durationMs) & "\n"
-  try:
-    let dir = parentDir(path)
-    if dir.len > 0: createDir(dir)
-    var f = open(path, fmAppend)
-    try: f.write line
-    finally: f.close()
-  except IOError, OSError:
-    raise newException(IOError, "proptest: cannot write the report to '" & path &
-      "' (PROPTEST_REPORT): " & getCurrentExceptionMsg())
+  appendJsonLine(path, toJsonLine(r, durationMs))
 
 # -------------------------------------------------------------------- engine
 
@@ -423,6 +369,11 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
                    (getMonoTime() - runStarted).inNanoseconds.float / 1e6)
   let src = newChoiceSource(deriveSeed(rs, settings.name), settings.maxChoices,
                             settings.edgeBias)
+  # RL10: a case that never returns is reported by the watchdog thread.
+  let watching = armWatchdog(settings.name, dbKey, rs, settings.hangTimeout, src,
+                             "PROPTEST_SEED=" & $rs & " " & getAppFilename(), settings.report)
+  defer:
+    if watching: disarmWatchdog()
   if not settings.mineConstants: src.useHints([])   # locks the hints empty
   src.maxDepth = settings.maxDepth
   let maxDiscards = settings.cases * settings.maxDiscardRatio
@@ -463,11 +414,15 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
   for i, ex in examples:
     src.startReplay([], settings.maxSize)
     inc caseNumber
+    src.recordInputs = true          # rare cases: inputs for the watchdog
+    caseStarted(waExample, caseNumber)
     let r = execute(ex, src, deadlineNs, settings.name)
     if r.outcome == ocFail: noteFailure(r, fsExample, i)
   for e in loadEntries(dbKey):
     src.startReplay(e.choices, settings.maxSize)
     inc caseNumber
+    src.recordInputs = true          # rare cases: inputs for the watchdog
+    caseStarted(if e.passes == hungMark: waSavedHang else: waSaved, caseNumber)
     let r = execute(prop, src, deadlineNs, settings.name)
     case r.outcome
     of ocFail:
@@ -514,6 +469,7 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
     src.recordInputs = verbose
     src.timing = (caseNumber and 7) == 0 and hcSlowGeneration notin settings.suppress
     let t0 = if src.timing: getMonoTime() else: MonoTime()
+    caseStarted(waExploring, caseNumber)
     let r = execute(prop, src, exploreLimit, settings.name)
     if src.timing: timedNs += (getMonoTime() - t0).inNanoseconds
     if r.outcome == ocPass and not manyDistinct and hcFewDistinct notin settings.suppress:
@@ -598,6 +554,7 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
     let probe: Probe = proc(candidate: seq[uint64]; used: var seq[uint64];
                             spans: var seq[Span]): bool =
       src.startReplay(candidate, maxSize)
+      caseStarted(waShrinking, caseNumber)
       let r = execute(prop, src, deadlineNs, settings.name)
       if r.outcome != ocFail: return false
       used = src.choices
@@ -631,6 +588,7 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
     for attempt in 0 .. 1:
       src.startReplay(f.choices, settings.maxSize)
       src.recordInputs = attempt == 1
+      caseStarted(waRerunning, caseNumber)
       let r = execute(run, src, deadlineNs, settings.name)
       if r.outcome == ocFail and r.signature == f.signature:
         if attempt == 1:

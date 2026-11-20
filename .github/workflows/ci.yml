@@ -12,6 +12,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # The watchdog (RL10) is off by default; CI turns it on, so a case that
+  # never returns fails with a report instead of running to the job timeout.
+  PROPTEST_HANG_TIMEOUT: '60000'
+
 jobs:
   test:
     name: test (nim ${{ matrix.nim }}, ${{ matrix.mm }}, threads=${{ matrix.threads }})

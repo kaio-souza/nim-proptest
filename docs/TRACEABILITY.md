@@ -60,7 +60,7 @@ Rules of the check:
 | O3 | JSON report | done | t_integration, t_engine | n/a | JSON Lines, `format` 1; `report` setting, `PROPTEST_REPORT` |
 | O4 | Statistics and warnings in the report | done | t_find | n/a | labels, stateful commands and lengths, health-check warnings |
 | K1 | Per-property settings | done | t_engine | n/a | |
-| K2 | Environment defaults | done | t_integration, t_find | n/a | `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`, `PROPTEST_DB`, `PROPTEST_DEADLINE`, `PROPTEST_TIME_BUDGET`, `PROPTEST_VERBOSITY`, `PROPTEST_REPORT` |
+| K2 | Environment defaults | done | t_integration, t_find | n/a | `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`, `PROPTEST_DB`, `PROPTEST_DEADLINE`, `PROPTEST_TIME_BUDGET`, `PROPTEST_VERBOSITY`, `PROPTEST_REPORT`, `PROPTEST_HANG_TIMEOUT` |
 | K3 | Settings validation | done | t_engine | n/a | |
 | I1 | `std/unittest` integration | done | t_integration | n/a | |
 | I2 | `unittest2` adapter | done | t_integration | n/a | no module needed (ADR-0002, amended); CI installs unittest2 0.3.0 and requires the test |
@@ -74,9 +74,9 @@ Rules of the check:
 | RL5 | Multiple distinct failures | done | t_values | b_shrink | 20 seeds; exploration continues after the first failure |
 | RL6 | Generator errors are not failures | done | t_engine | n/a | |
 | RL7 | Bounded resources | done | t_choices, t_engine | n/a | `maxChoices`, overruns discarded |
-| RL8 | Per-case deadline | partial | t_find | n/a | slow cases fail and shrink; a case that never returns needs RL10 (after 1.0) |
+| RL8 | Per-case deadline | done | t_find | n/a | slow cases fail and shrink; a case that never returns is RL10's |
 | RL9 | Crash breadcrumbs | done | t_integration | n/a | |
-| RL10 | Watchdog | deferred | | | |
+| RL10 | Watchdog | done | t_integration, t_engine | n/a | `hangTimeout`, `PROPTEST_HANG_TIMEOUT`; needs `--threads:on` (ADR-0017) |
 | RL11 | Health checks | done | t_engine, t_find | n/a | filter, data too large, few distinct inputs, slow generation; `suppress` |
 | RL12 | Failure database robustness | done | t_database | n/a | versioned format, atomic writes, entries that no longer fit dropped |
 | RL13 | Isolation in stateful tests | done | t_stateful | n/a | fresh model and setup per sequence; teardown after failures |
