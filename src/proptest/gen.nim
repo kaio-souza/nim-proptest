@@ -78,15 +78,21 @@ proc arbitrary*[K, V](src: ChoiceSource; t: typedesc[Table[K, V]]): Table[K, V] 
   mixin arbitrary
   var m = src.initMany(0, high(int))
   while src.more(m):
+    # Named locals: ARC (Nim 2.2.4) leaks a temporary passed to `[]=`
+    # when a later draw raises (LeakSanitizer, t_derive).
     let k = src.arbitrary(K)
-    result[k] = src.arbitrary(V)
+    var v = src.arbitrary(V)
+    result[k] = move v
 
 proc arbitrary*[K, V](src: ChoiceSource; t: typedesc[OrderedTable[K, V]]): OrderedTable[K, V] =
   mixin arbitrary
   var m = src.initMany(0, high(int))
   while src.more(m):
+    # Named locals: ARC (Nim 2.2.4) leaks a temporary passed to `[]=`
+    # when a later draw raises (LeakSanitizer, t_derive).
     let k = src.arbitrary(K)
-    result[k] = src.arbitrary(V)
+    var v = src.arbitrary(V)
+    result[k] = move v
 
 proc arbitrary*[T](src: ChoiceSource; t: typedesc[HashSet[T]]): HashSet[T] =
   mixin arbitrary

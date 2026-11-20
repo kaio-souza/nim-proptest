@@ -1,6 +1,6 @@
 ## Shared helpers for the test suite.
 
-import std/[os, osproc, strutils]
+import std/[os, osproc, strtabs, strutils]
 
 const
   testsDir* = currentSourcePath().parentDir
@@ -15,11 +15,13 @@ proc compileFixture*(name: string; flags = ""): tuple[output: string; ok: bool] 
 
 proc runFixture*(name: string; env: openArray[(string, string)] = []): tuple[output: string; code: int] =
   ## Runs a compiled fixture with extra environment variables.
-  var cmd = ""
-  for (k, v) in env:
-    cmd.add k & "=" & quoteShell(v) & " "
-  cmd.add quoteShell(fixturesDir / name)
-  let (output, code) = execCmdEx(cmd, workingDir = fixturesDir)
+  ## The environment is passed to the process, not as a `K=V cmd` prefix:
+  ## that is POSIX shell syntax and fails on Windows.
+  let fullEnv = newStringTable(modeCaseSensitive)
+  for k, v in envPairs(): fullEnv[k] = v
+  for (k, v) in env: fullEnv[k] = v
+  let (output, code) = execCmdEx(quoteShell(fixturesDir / name), env = fullEnv,
+                                 workingDir = fixturesDir)
   (output, code)
 
 proc countOf*(haystack, needle: string): int =
