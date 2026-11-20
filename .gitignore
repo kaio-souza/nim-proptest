@@ -1,0 +1,22 @@
+# Compiled binaries (no extension) in tests, examples and benchmarks
+tests/*
+!tests/*.nim
+!tests/*.nims
+examples/*
+!examples/*.nim
+!examples/*.nims
+benchmarks/*
+!benchmarks/*.nim
+
+# Compiler artifacts
+nimcache/
+htmldocs/
+*.exe
+*.o
+
+# Local failure database (ADR-0003)
+.proptest/
+
+# Editor
+.idea/
+.vscode/
