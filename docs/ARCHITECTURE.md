@@ -33,13 +33,12 @@ src/
     assertions.nim             # check/require rewriting, propCheck, show (ADR-0009)
     signature.nim              # failure signatures from exception type + user stack frame (ADR-0006)
     shrink.nim                 # shrink passes on choice sequences, tried-sequence cache
-    engine.nim                 # Settings, run loop: explore, shrink, double re-run, results
+    engine.nim                 # Settings, run loop: explore, shrink, double re-run, results; JSON report (O3)
     report.nim                 # text report
     database.nim               # run seed, crash breadcrumbs (ADR-0003); failure database (ADR-0014)
     stateful.nim               # stateMachine and replayCommands macros, sequence runner, swarm (ADR-0011, ADR-0012)
     labels.nim                 # classify / cover / label rewriting into compile-time slots (ADR-0012)
     mining.nim                 # integer constants of the property and the test file as boundary hints (ADR-0012)
-    unittest2.nim              # (planned) optional adapter, explicit import (ADR-0002)
 ```
 
 ### Drawing primitives

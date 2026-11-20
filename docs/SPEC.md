@@ -145,7 +145,7 @@ Planned environment variables (final names fixed in v0.1): `PROPTEST_SEED`, `PRO
 | ID | Pri | Requirement |
 |----|-----|-------------|
 | I1 | P0 | Works inside `std/unittest` (`test` / `suite`). |
-| I2 | P1 | Works inside `unittest2` through an optional module, without making it a dependency ([ADR-0002](decisions/0002-zero-dependencies-runner-agnostic.md)). |
+| I2 | P1 | Works inside `unittest2` without making it a dependency ([ADR-0002](decisions/0002-zero-dependencies-runner-agnostic.md); no module turned out to be needed). |
 | I3 | P1 | Standalone use (no test framework): a property returns a result object. |
 | I4 | P2 | Async properties (`std/asyncdispatch`; Chronos in a separate module). |
 

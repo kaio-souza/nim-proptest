@@ -96,6 +96,7 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 | `swarm` | true | Stateful tests: half of the sequences leave some commands out |
 | `verbosity` | `vNormal` | `vQuiet`, `vNormal`, `vVerbose` (every case, every statistic), `vDebug` (shrink steps) |
 | `suppress` | `{}` | Health checks to skip: `hcLargeData`, `hcFewDistinct`, `hcSlowGeneration` |
+| `report` | `PROPTEST_REPORT` | JSON Lines file each result is appended to; empty: none |
 | `seed` | random | Fixes the run seed |
 | `name` | `file:line` | Property name; derives its own seed |
 
@@ -108,6 +109,15 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 | `PROPTEST_DEADLINE` | Default `deadline` in ms (e.g. set it in CI) |
 | `PROPTEST_TIME_BUDGET` | Default `timeBudget` in ms |
 | `PROPTEST_VERBOSITY` | `quiet`, `normal`, `verbose` or `debug` |
+| `PROPTEST_REPORT` | Default `report`: a JSON Lines file for CI tools (below) |
+
+### JSON report for CI
+
+`PROPTEST_REPORT=proptest-report.jsonl nimble test` appends one line of JSON per property to that file (it is created with its directory; several test programs can share it). Each line has `format` (1), `name`, `status` (`passed`, `failed`, `flaky`, `gaveUp`, `generatorError`, `insufficientCoverage`), `passed`, `seed` (a string: it does not fit a JSON number), `program`, `replay` (the command that replays the run), `casesPassed`, `discarded`, `firstFailureAt`, `durationMs`, `message`, `labeledCases`, `labels` (`name`, `kind`, `cases`, `events`, `required` for `cover`), `warnings`, and `failures`: `kind` and `location` (the failure signature), `message`, `source` (`explored`, `database`, `example`), `flaky`, `choices`, `shrinkExecutions`, `shrinkStopped`, `inputs` (`name`, `value`), `machine` and `steps` for state machines, `stackTrace`. Fields may be added; a field that changes meaning or goes away raises `format`.
+
+```sh
+jq -r 'select(.passed | not) | "\(.name): \(.status), \(.replay)"' proptest-report.jsonl
+```
 
 ## Generators
 
@@ -225,7 +235,8 @@ forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 | Built-in type generators, combinators, custom `arbitrary` and `newGen` | ✅ |
 | Integrated shrinking, multiple distinct failures, flaky detection | ✅ |
 | `check`/`require` rewriting, `assume`, settings, environment variables | ✅ |
-| `std/unittest` integration; standalone use | ✅ |
+| `std/unittest` and `unittest2` integration; standalone use | ✅ |
+| JSON report for CI tools (`PROPTEST_REPORT`) | ✅ |
 | Seed replay and crash breadcrumbs | ✅ (Linux, macOS and Windows in CI; JS pending) |
 | Stateful / model-based testing: `stateMachine`, shortest failing sequence printed as `replayCommands` code | ✅ |
 | Generators derived for objects, case objects, `distinct`, `ref` and recursive types; `Table`, `HashSet`; `frequency`, `recursive`; Unicode strings | ✅ |
@@ -233,7 +244,7 @@ forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 | `classify` / `cover` / `label`, stateful statistics, verbosity levels | ✅ |
 | Edge-case bias, boundary hints (`near`, mined constants), swarm testing | ✅ |
 | Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
-| macOS and Windows CI, `unittest2` adapter, JSON report, stability policy | next ([roadmap](docs/ROADMAP.md)) |
+| Configuration reference, troubleshooting guide, stability policy | next ([roadmap](docs/ROADMAP.md)) |
 
 ## Known limitations
 

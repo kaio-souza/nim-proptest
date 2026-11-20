@@ -1,6 +1,6 @@
 ## The run loop: cases, discards, failures, signatures, reports, settings.
 
-import std/[unittest, strutils]
+import std/[unittest, strutils, os, json]
 import proptest
 
 proc failsOutsideATest() =
@@ -141,3 +141,34 @@ suite "engine":
       check xs.len < 3
     check r.status == psFailed
     check r.failures[0].shrinkExecutions <= 3
+
+  test "O3/K1: the report setting appends the result; an unwritable path is a clear error":
+    let dir = getTempDir() / ("proptest_report_engine_" & $getCurrentProcessId())
+    removeDir(dir)
+    let path = dir / "out.jsonl"
+    let r = forAllResult(initSettings(seed = 16, name = "to report", report = path), x in int):
+      discard
+    check r.passed
+    let line = parseJson(readFile(path).strip)
+    check line["name"].getStr == "to report"
+    check line["status"].getStr == "passed"
+    # A file where a directory should be: the run raises IOError naming the path.
+    writeFile(dir / "file", "")
+    expect IOError:
+      discard forAllResult(initSettings(seed = 16, report = dir / "file" / "out.jsonl"), x in int):
+        discard
+    try:
+      discard forAllResult(initSettings(seed = 16, report = dir / "file" / "out.jsonl"), x in int):
+        discard
+    except IOError as e:
+      check "PROPTEST_REPORT" in e.msg
+      check "out.jsonl" in e.msg
+    removeDir(dir)
+
+  test "O3: report strings are valid JSON, whatever the bytes":
+    let r = forAllResult(initSettings(seed = 17, name = "esc\t\x01\xC3\xA9\xFF"), x in int):
+      discard
+    let line = toJsonLine(r)
+    check line.count('\n') == 0
+    let j = parseJson(line)
+    check j["name"].getStr == "esc\t\x01éÿ"

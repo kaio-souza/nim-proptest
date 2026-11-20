@@ -7,6 +7,24 @@ All notable changes. Versions follow semantic versioning. Any change to the valu
 Everything since the last tag (v0.2.0). Work is grouped by theme, not by
 version: a release is cut when it is worth one, not per theme.
 
+### Your platform and test runner
+
+New API only: the values generated for a given seed are unchanged (checked
+against the shrink and detection baselines).
+
+#### Added
+- JSON report for CI tools: `PROPTEST_REPORT=<file>` (or the `report`
+  setting) appends one JSON line per property, with its status, seed, replay
+  command, counts, duration, statistics, warnings and every failure
+  (signature, message, inputs, stateful steps). Versioned by `format` (1).
+- `unittest2` support (I2), tested in CI: `forAll` and `checkStateMachine`
+  work inside its `test` as inside `std/unittest`, with no extra import.
+- CI on macOS and Windows, and on Nim devel as an allowed failure (Q2).
+
+#### Fixed
+- A memory leak when generating `Table` and `OrderedTable` under ARC/ORC
+  when a later draw raised (a Nim 2.2.4 ARC bug; found by LeakSanitizer).
+
 ### Your own types, and bugs that stay found
 
 Useful on everyday Nim code: your own types with no generator code, and bugs
@@ -43,13 +61,6 @@ shrink and detection baselines).
   tree. The failure database key, too, is now computed from the code as
   written instead of the rewritten body, whose generated names changed with
   unrelated code.
-- A memory leak when generating `Table` and `OrderedTable` under ARC/ORC
-  when a later draw raised (a Nim 2.2.4 ARC bug; found by LeakSanitizer).
-
-#### Changed
-- CI also runs the full test suite on macOS and Windows, and on Nim devel
-  as an allowed failure (Q2).
-
 #### Generation changes
 - Boundary hints no longer include the internal slot numbers (2, 3, ...)
   that the label rewrite left in the body. Only properties and state

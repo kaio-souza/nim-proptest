@@ -55,13 +55,13 @@ Rules of the check:
 | D3 | Size statistics | deferred | | | |
 | O1 | Quiet exploration | done | t_integration | n/a | |
 | O2 | Verbosity levels | done | t_find | n/a | `verbosity`, `PROPTEST_VERBOSITY` |
-| O3 | JSON report | pending | | | platform and runner |
+| O3 | JSON report | done | t_integration, t_engine | n/a | JSON Lines, `format` 1; `report` setting, `PROPTEST_REPORT` |
 | O4 | Statistics and warnings in the report | done | t_find | n/a | labels, stateful commands and lengths, health-check warnings |
 | K1 | Per-property settings | done | t_engine | n/a | |
-| K2 | Environment defaults | partial | t_integration, t_find | n/a | `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`, `PROPTEST_DB`, `PROPTEST_DEADLINE`, `PROPTEST_TIME_BUDGET`, `PROPTEST_VERBOSITY`; `PROPTEST_REPORT` pending |
+| K2 | Environment defaults | done | t_integration, t_find | n/a | `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`, `PROPTEST_DB`, `PROPTEST_DEADLINE`, `PROPTEST_TIME_BUDGET`, `PROPTEST_VERBOSITY`, `PROPTEST_REPORT` |
 | K3 | Settings validation | done | t_engine | n/a | |
 | I1 | `std/unittest` integration | done | t_integration | n/a | |
-| I2 | `unittest2` adapter | pending | | | platform and runner |
+| I2 | `unittest2` adapter | done | t_integration | n/a | no module needed (ADR-0002, amended); CI installs unittest2 0.3.0 and requires the test |
 | I3 | Standalone use | done | t_engine | n/a | `forAllResult`, `runProperty`, `PropertyError` |
 | I4 | Async properties | deferred | | | |
 | F1 | Fuzzing bridge | deferred | | | |

@@ -1,6 +1,7 @@
 ## Run loop of a property: generate, execute, shrink, re-run, report.
 
 import std/[os, strutils, math, monotimes, times, hashes]
+from std/unicode import runeLenAt, validateUtf8
 import prng, choices, signature, shrink, database
 
 export signature
@@ -32,6 +33,7 @@ type
     shrinkTimeBudget*: int ## Shrinking time budget per failure in ms; 0 = none (S4).
     suppress*: set[HealthCheck] ## Health checks not to run (RL11).
     maxDepth*: int         ## Nesting depth of recursive data while exploring (ADR-0013).
+    report*: string        ## JSON Lines file the result is appended to; empty = none (O3). `PROPTEST_REPORT`.
     seed*: uint64          ## Run seed; 0 uses `PROPTEST_SEED` or a random one.
 
   HealthCheck* = enum
@@ -128,16 +130,18 @@ proc initSettings*(name = "";
                    shrinkTimeBudget = 0;
                    suppress: set[HealthCheck] = {};
                    maxDepth = defaultMaxDepth;
+                   report = getEnv("PROPTEST_REPORT");
                    seed = 0'u64): Settings =
   ## Defaults can be changed globally with environment variables (K2):
-  ## `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`.
+  ## `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`,
+  ## `PROPTEST_REPORT`, ...
   Settings(name: name, cases: cases, maxSize: maxSize, maxDiscardRatio: maxDiscardRatio,
            maxShrinks: maxShrinks, maxChoices: maxChoices, maxFailures: maxFailures,
            maxSteps: maxSteps, verbosity: verbosity, swarm: swarm,
            edgeBias: edgeBias, mineConstants: mineConstants,
            deadline: deadline, timeBudget: timeBudget,
            shrinkTimeBudget: shrinkTimeBudget, suppress: suppress, maxDepth: maxDepth,
-           seed: seed)
+           report: report, seed: seed)
 
 proc validate*(s: Settings) =
   ## Raises `ValueError` describing the first invalid setting (K3).
@@ -242,6 +246,146 @@ proc sizeFor(s: Settings; caseIndex: int): int {.inline.} =
   ## Sizes grow from 0 to `maxSize` over the run: simple cases first.
   if s.cases <= 1: s.maxSize else: (s.maxSize * caseIndex) div (s.cases - 1)
 
+# --------------------------------------------------------- JSON report (O3)
+
+const reportFormat* = 1
+  ## Version of the JSON report; raised when a field changes meaning or goes away.
+
+proc addJson(o: var string; s: string) =
+  ## `s` as a JSON string. Bytes that are not valid UTF-8 (a raw byte in an
+  ## exception message) become `\u00XX`, so the line stays valid JSON.
+  o.add '"'
+  var i = 0
+  while i < s.len:
+    let c = s[i]
+    case c
+    of '"': o.add "\\\""
+    of '\\': o.add "\\\\"
+    of '\n': o.add "\\n"
+    of '\r': o.add "\\r"
+    of '\t': o.add "\\t"
+    of '\0' .. '\x08', '\x0B', '\x0C', '\x0E' .. '\x1F', '\x7F':
+      o.add "\\u00" & toHex(ord(c), 2)
+    of ' ', '!', '#' .. '[', ']' .. '~':
+      o.add c
+    of '\x80' .. '\xFF':
+      let size = runeLenAt(s, i)
+      let chunk = s[i ..< min(s.len, i + size)]
+      if chunk.len == size and validateUtf8(chunk) == -1:
+        o.add chunk
+        i += size
+        continue
+      o.add "\\u00" & toHex(ord(c), 2)
+    inc i
+  o.add '"'
+
+proc addJson(o: var string; key: string; value: string) =
+  o.addJson(key)
+  o.add ':'
+  o.addJson(value)
+
+proc addJson(o: var string; key: string; value: int | bool | float) =
+  o.addJson(key)
+  o.add ':'
+  o.add $value
+
+proc addJson(o: var string; key: string; values: seq[string]) =
+  o.addJson(key)
+  o.add ":["
+  for i, v in values:
+    if i > 0: o.add ','
+    o.addJson(v)
+  o.add ']'
+
+proc statusName(s: PropertyStatus): string =
+  case s
+  of psPassed: "passed"
+  of psFailed: "failed"
+  of psFlaky: "flaky"
+  of psGaveUp: "gaveUp"
+  of psGeneratorError: "generatorError"
+  of psInsufficientCoverage: "insufficientCoverage"
+
+proc toJsonLine*(r: PropertyResult; durationMs = 0.0): string =
+  ## One property result as a single line of JSON (O3). The seed is a string:
+  ## it does not fit the 53-bit integers of many JSON readers.
+  result = "{"
+  result.addJson("format", reportFormat); result.add ','
+  result.addJson("name", r.name); result.add ','
+  result.addJson("status", statusName(r.status)); result.add ','
+  result.addJson("passed", r.status == psPassed); result.add ','
+  result.addJson("seed", $r.runSeed); result.add ','
+  result.addJson("program", getAppFilename()); result.add ','
+  result.addJson("replay", "PROPTEST_SEED=" & $r.runSeed & " " & getAppFilename()); result.add ','
+  result.addJson("casesPassed", r.casesRun); result.add ','
+  result.addJson("discarded", r.discarded); result.add ','
+  result.addJson("firstFailureAt", r.firstFailureAt); result.add ','
+  result.addJson("durationMs", round(durationMs, 3)); result.add ','
+  result.addJson("message", r.message); result.add ','
+  result.add "\"failures\":["
+  for i, f in r.failures:
+    if i > 0: result.add ','
+    result.add '{'
+    result.addJson("kind", f.signature.kind); result.add ','
+    result.addJson("location", f.signature.location); result.add ','
+    result.addJson("message", f.message); result.add ','
+    result.addJson("source", (case f.source
+      of fsExplored: "explored"
+      of fsDatabase: "database"
+      of fsExample: "example")); result.add ','
+    result.addJson("flaky", f.flaky); result.add ','
+    result.addJson("choices", f.choices.len); result.add ','
+    result.addJson("shrinkExecutions", f.shrinkExecutions); result.add ','
+    result.addJson("shrinkStopped", f.shrinkStopped); result.add ','
+    result.add "\"inputs\":["
+    for j, (name, value) in f.inputs:
+      if j > 0: result.add ','
+      result.add '{'
+      result.addJson("name", name); result.add ','
+      result.addJson("value", value)
+      result.add '}'
+    result.add "],"
+    result.addJson("machine", f.machine); result.add ','
+    result.addJson("steps", f.steps); result.add ','
+    result.addJson("stackTrace", f.stackTrace)
+    result.add '}'
+  result.add "],"
+  result.addJson("labeledCases", r.labeledCases); result.add ','
+  result.add "\"labels\":["
+  for i, st in r.labels:
+    if i > 0: result.add ','
+    result.add '{'
+    result.addJson("name", st.name); result.add ','
+    result.addJson("kind", (case st.kind
+      of lkClassify: "classify"
+      of lkCover: "cover"
+      of lkLabel: "label"
+      of lkCommand: "command"
+      of lkDisabled: "preconditionFalse")); result.add ','
+    result.addJson("cases", st.cases); result.add ','
+    result.addJson("events", st.events)
+    if st.kind == lkCover:
+      result.add ','
+      result.addJson("required", st.required)
+    result.add '}'
+  result.add "],"
+  result.addJson("warnings", r.warnings)
+  result.add '}'
+
+proc appendReport*(path: string; r: PropertyResult; durationMs = 0.0) =
+  ## Appends `r` to the JSON Lines file `path`, creating it and its directory.
+  ## One write per line, so runs of several test programs share the file.
+  let line = toJsonLine(r, durationMs) & "\n"
+  try:
+    let dir = parentDir(path)
+    if dir.len > 0: createDir(dir)
+    var f = open(path, fmAppend)
+    try: f.write line
+    finally: f.close()
+  except IOError, OSError:
+    raise newException(IOError, "proptest: cannot write the report to '" & path &
+      "' (PROPTEST_REPORT): " & getCurrentExceptionMsg())
+
 # -------------------------------------------------------------------- engine
 
 proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
@@ -254,6 +398,11 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
   let rs = if settings.seed != 0: settings.seed else: runSeed()
   writeBreadcrumb(rs)
   result = PropertyResult(name: settings.name, runSeed: rs, verbosity: settings.verbosity)
+  let runStarted = getMonoTime()
+  defer:
+    if settings.report.len > 0:
+      appendReport(settings.report, result,
+                   (getMonoTime() - runStarted).inNanoseconds.float / 1e6)
   let src = newChoiceSource(deriveSeed(rs, settings.name), settings.maxChoices,
                             settings.edgeBias)
   if not settings.mineConstants: src.useHints([])   # locks the hints empty

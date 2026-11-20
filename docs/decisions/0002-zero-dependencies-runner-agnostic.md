@@ -25,3 +25,9 @@ Nim projects test with `std/unittest`, `unittest2`, or plain programs that `doAs
 ## Evidence
 
 `.nimble` with only `requires "nim >= ..."`; CI jobs for each adapter.
+
+## Amendment (2026-11-20): no `unittest2` module
+
+The adapter module turned out to be unnecessary. `forAll` and `checkStateMachine` expand to `checkpoint(report); fail()` inside a test, detected with `declared(testStatusIMPL)`, and leave those names unbound, so they resolve at the call site: to `std/unittest` or to `unittest2`, whichever the test file imports. `unittest2` defines the same three names with the same meaning, and the `check`/`require` rewriting (ADR-0009) works by name. Users import `proptest` and `unittest2`, nothing else.
+
+Evidence: `tests/fixtures/f_unittest2.nim` (a passing property, a failing one and a state machine) and the I2 test in `t_integration`. CI installs `unittest2` 0.3.0 and sets `PROPTEST_REQUIRE_UNITTEST2`, so the test cannot be skipped there; locally it is skipped when `unittest2` is not installed. If a later `unittest2` changes those names, the module of the original decision is the fallback.

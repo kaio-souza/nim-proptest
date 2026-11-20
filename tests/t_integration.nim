@@ -1,7 +1,7 @@
 ## End-to-end behavior through separately compiled fixture programs:
 ## runner output, environment variables, files and compile-time messages.
 
-import std/[unittest, os, strutils]
+import std/[unittest, os, strutils, json]
 import helpers
 
 suite "integration":
@@ -58,6 +58,74 @@ suite "integration":
     removeDir(dir)
     discard runFixture("f_seed", {"PROPTEST_DB": "off"})
     check not dirExists(dir)
+
+  test "I2: inside unittest2 a failing property fails its test once, with no adapter module":
+    # unittest2 is not a dependency (ADR-0002): skipped when it is not
+    # installed, unless PROPTEST_REQUIRE_UNITTEST2 is set (CI installs it).
+    let (buildLog, ok) = compileFixture("f_unittest2")
+    if not ok and "cannot open file: unittest2" in buildLog and
+       getEnv("PROPTEST_REQUIRE_UNITTEST2").len == 0:
+      skip()
+    else:
+      check ok
+      if not ok: echo buildLog
+      let (output, code) = runFixture("f_unittest2", {"PROPTEST_DB": "off"})
+      check code == 1
+      check countOf(output, "[FAILED ]") == 2
+      check countOf(output, "falsified") == 2
+      check countOf(output, "check failed: x < 500") == 1
+      check "x = 500" in output
+      check "replayCommands BoundedQueue" in output
+      check "2 FAILED" in output
+
+  test "O3/K2: PROPTEST_REPORT appends one JSON line per property":
+    check compileFixture("f_report").ok
+    let path = getTempDir() / ("proptest_report_" & $getCurrentProcessId()) / "report.jsonl"
+    removeDir(parentDir(path))
+    let env = {"PROPTEST_REPORT": path, "PROPTEST_DB": "off"}
+    let r = runFixture("f_report", env)
+    check r.code == 0
+    check fileExists(path)
+    let lines = readFile(path).strip.splitLines
+    check lines.len == 3
+    let passing = parseJson(lines[0])
+    check passing["format"].getInt == 1
+    check passing["name"].getStr == "passing"
+    check passing["status"].getStr == "passed"
+    check passing["passed"].getBool
+    check passing["seed"].getStr == "1"
+    check passing["casesPassed"].getInt == 100
+    check passing["durationMs"].getFloat >= 0.0
+    check passing["labeledCases"].getInt == 100
+    var kinds: seq[string]
+    for l in passing["labels"]: kinds.add l["kind"].getStr
+    check kinds == @["classify", "cover"]
+    check passing["labels"][1]["required"].getFloat == 10.0
+    let failing = parseJson(lines[1])
+    check failing["status"].getStr == "failed"
+    check not failing["passed"].getBool
+    check failing["replay"].getStr.startsWith("PROPTEST_SEED=1 ")
+    let f = failing["failures"][0]
+    check f["kind"].getStr == "ValueError"
+    check f["source"].getStr == "explored"
+    check f["message"].getStr == "bad \"input\"\\\nbyte ÿ"
+    check f["inputs"][0]["name"].getStr == "s"
+    check f["inputs"][0]["value"].getStr == "\"a\""
+    let machine = parseJson(lines[2])
+    check machine["status"].getStr == "failed"
+    check machine["failures"][0]["machine"].getStr == "BoundedQueue"
+    check machine["failures"][0]["steps"].len == 4
+    # A second run appends: CI can point every test program at one file.
+    discard runFixture("f_report", env)
+    check readFile(path).strip.splitLines.len == 6
+    removeDir(parentDir(path))
+
+  test "O3: without PROPTEST_REPORT no report is written":
+    check compileFixture("f_report").ok
+    let r = runFixture("f_report", {"PROPTEST_DB": "off"})
+    check r.code == 0
+    check "done" in r.output
+    check not fileExists(fixturesDir / "report.jsonl")
 
   test "A1: `name = gen` is rejected at compile time with the right form":
     let (buildLog, ok) = compileFixture("f_badsyntax")

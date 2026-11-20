@@ -31,7 +31,12 @@ jobs:
       - name: Allow git in the container workspace (nimble reads the revision)
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      - name: Install unittest2 for the I2 test (not a dependency, ADR-0002)
+        run: nimble install -y unittest2@0.3.0
+
       - name: Tests (release)
+        env:
+          PROPTEST_REQUIRE_UNITTEST2: '1'
         run: nimble test -y --mm:${{ matrix.mm }} --threads:${{ matrix.threads }} -d:release
 
       - name: Tests (debug, with runtime checks)
