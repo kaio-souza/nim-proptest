@@ -6,7 +6,7 @@ Legend: [x] done (implemented and tested) · [ ] pending · [~] deferred
 
 ## Where we are
 
-**v0.3 implemented and tested (bug-finding power, coverage, budgets, health checks), not yet published.** v0.2 is tagged and on GitHub; the v0.3 changes have been checked locally on the full CI matrix. Next: v0.4. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 72 done or partial, all with evidence).
+**v0.3 implemented and tested (bug-finding power, coverage, budgets, health checks), CI green on GitHub, not yet in the Nimble index.** v0.2 is tagged. Next: v0.4. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 72 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
@@ -76,7 +76,7 @@ Goal: replace the planned model test of `circuit_breaker` with this library. Des
 - [x] Value test (3 pushes + 1 pop → 4 steps) and shrink/allocation gates
 - [x] `circuit_breaker` model test (its V2/Q5) as the first external user
 - [x] Stateful testing tutorial (DOC4): [`STATEFUL.md`](STATEFUL.md), example run in CI
-- [ ] First CI run of v0.2 on GitHub (push), including `nim-circuit-breaker` CI once proptest v0.2 is reachable from it
+- [x] CI on GitHub: green with v0.3, after fixing the sanitizer jobs. On `ubuntu-latest` kernels (`vm.mmap_rnd_bits=32`) the ASan of the gcc in `nimlang/nim:2.2.4` sometimes looped forever on `AddressSanitizer:DEADLYSIGNAL`; the jobs now lower it to 28 on the runner and run the image with `docker run`, one suite per job.
 
 Learned in v0.2, for v0.3: uniform integers rarely hit a specific boundary (a timeout of exactly 1000 ms in `0 .. 2000`). The tutorial adds boundaries by hand with `oneOf(..., elements([...]))`; boundary hints and swarm testing (v0.3, ADR-0012) should make that unnecessary.
 
@@ -102,6 +102,7 @@ Order of work (each step lands with tests, a value test and, where it touches th
 - [x] Per-case deadline; time budgets for runs and shrinking (RL8 partial: a case that never returns needs RL10; PF8, S4)
 - [x] Health checks: data too large, few distinct inputs, slow generation, `suppress`; verbosity levels (RL11, O2)
 - [x] Property patterns cookbook (DOC3), `examples/patterns.nim` in CI; tutorial updated
+- [x] CI green on GitHub (see v0.2 for the sanitizer fix)
 - [x] Experiment: mined constants, **adopted**: the body's literals and constants get half of the hinted draws, the file's literals the rest (ADR-0012)
 
 Measured on `b_find` with 100 seeds, before v0.3 → v0.3: exact 1000 in `0..2000` 1 → 68; 12 increments without reset 3 → 97; breaker probe at exactly 1000 ms 72 → 80; stateful queue, reverse, overflow, boundary 100: 100 → 100; breaker backoff cap 0 → 3. Rows move by up to ~10 points between equivalent implementations (a different random stream), so only larger changes are read as effects.

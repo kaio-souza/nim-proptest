@@ -36,6 +36,11 @@ a bug that needs a command to stay away from 3 to 97, with no row worse.
 - Bug-finding benchmark and gate (`b_find`), property patterns cookbook
   (`docs/PATTERNS.md`, `examples/patterns.nim`).
 
+### Fixed
+- CI: the sanitizer jobs could hang forever on `AddressSanitizer:DEADLYSIGNAL`
+  (kernel address randomization vs. the ASan of older gcc); they now run one
+  suite per job, with timeouts, and a kernel setting that avoids it.
+
 ### Changed
 - A new shrink pass lowers a choice and raises the next one, so `-1`
   shrinks to `1` when `0` is not a counterexample.
