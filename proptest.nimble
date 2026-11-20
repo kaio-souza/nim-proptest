@@ -29,5 +29,6 @@ task gate, "Deterministic gates: shrink executions, allocations, bug detection (
   # ARC: Nim 2.2.4 crashes with ORC + nimAllocStats when re-raising.
   exec benchFlags & "--mm:arc -d:nimAllocStats benchmarks/b_gen.nim --check"
 
-task trace, "Check the traceability matrix (ADR-0004)":
+task trace, "Check the traceability matrix (ADR-0004) and that the docs match the code":
   exec "nim r --hints:off scripts/check_traceability.nim"
+  exec "nim r --hints:off scripts/check_docs.nim"

@@ -8,7 +8,7 @@ Work is planned by **theme and priority, not by version**. Most themes take a da
 
 ## Where we are
 
-**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 84 done or partial, all with evidence).
+**Usable, not yet in the Nimble index.** Built-in types, your own types with no generator code, stateful tests, a failure database, coverage statistics and boundary-seeking exploration all work and are tested. Everything is green on GitHub CI on Linux, macOS and Windows, with Nim devel as an allowed failure. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 86 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
@@ -42,8 +42,12 @@ What keeps a new user from adopting the library, most blocking first.
 
 ### 2. Learning it alone
 
-- [ ] Configuration reference: every setting and environment variable in one place (DOC5)
-- [ ] Troubleshooting guide: what to do when something looks wrong (DOC6)
+- [x] Configuration reference: every setting and environment variable in one place, with recipes and trade-offs (DOC5): [`CONFIGURATION.md`](CONFIGURATION.md)
+- [x] Troubleshooting guide: from the message you see to its cause and fix, with real reports (DOC6): [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md). `scripts/check_docs.nim` (in `nimble trace`) keeps both in step with the code: every setting, environment variable and define documented, every heading link valid.
+
+Learned while writing them: in `-d:release`, failures other than `check` lose their line (no stack trace), so two bugs of the same exception type are reported as one, and `--stackTrace:on` alone is not enough (it needs `--lineTrace:on`). And a property that discards every case never grows its sizes, so an `assume` on the length of a collection gives up with 0 passing cases.
+
+- [ ] Compile-time warning when failures cannot be located: built without `stackTrace` and `lineTrace` (`-d:release`, `-d:danger`), failures other than `check` are told apart by exception type only, so two bugs of the same type are reported as one. Like the `--panics:on` warning (A7): say so at compile time and suggest `--stackTrace:on --lineTrace:on`. No generated value changes.
 
 ### 3. Trust over time
 
@@ -56,6 +60,7 @@ Anything that alters the values generated for a seed. They land **together**, in
 - [ ] `sized`, `unique`, `sortedSeq` (C5, C6)
 - [ ] Generation speed: meet the `int` and debug-build targets below
 - [ ] Targeted exploration for deep states (the breaker's backoff cap, ADR-0012), if `b_find` shows a gain
+- [ ] Grow sizes with discarded cases too: today the size advances only with cases that run (passing or failing), so a property that discards every case keeps generating the smallest values, and an `assume` on a collection's length gives up with 0 passing cases (found while writing DOC6). Growing on discards, or on attempts, lets such properties reach their inputs; measure the effect on `b_find` and on the gave-up rate before adopting it.
 - [ ] Any pending change to the exploration distribution
 
 ## Done, by theme

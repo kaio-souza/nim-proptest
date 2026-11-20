@@ -72,7 +72,7 @@ Too many discarded cases stop the run with a "gave up" report. Prefer generating
 
 ### Settings
 
-Pass an `initSettings(...)` value among the arguments:
+Pass an `initSettings(...)` value among the arguments. Most properties need none. The tables below are a summary; [docs/CONFIGURATION.md](docs/CONFIGURATION.md) has recipes (CI, nightly runs, replaying, slow properties), what each setting costs, and which settings must match for a seed to replay.
 
 ```nim
 forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
@@ -205,6 +205,8 @@ The library's own bug-finding power is measured: [`benchmarks/b_find.nim`](bench
 
 ## Results and failures
 
+Something looks wrong (gave up, flaky, a warning, a seed that does not replay)? [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) starts from what you see.
+
 - **Inside a unittest `test`**: a failing property fails the test with one report.
 - **Elsewhere**: `forAll` raises `PropertyError` (with `.propertyResult`), and `forAllResult(...)` (same arguments) returns the `PropertyResult` without raising.
 
@@ -244,7 +246,8 @@ forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 | `classify` / `cover` / `label`, stateful statistics, verbosity levels | ✅ |
 | Edge-case bias, boundary hints (`near`, mined constants), swarm testing | ✅ |
 | Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
-| Configuration reference, troubleshooting guide, stability policy | next ([roadmap](docs/ROADMAP.md)) |
+| Configuration reference and troubleshooting guide, checked against the code in CI | ✅ |
+| Stability policy | next ([roadmap](docs/ROADMAP.md)) |
 
 ## Known limitations
 

@@ -202,7 +202,7 @@ jobs:
       - name: Generate API documentation (Q4)
         run: nim doc --project --outdir:/tmp/htmldocs src/proptest.nim
 
-      - name: Traceability matrix (ADR-0004)
+      - name: Traceability matrix (ADR-0004) and docs in step with the code (DOC5, DOC6)
         run: nimble trace
 
       - name: Deterministic performance gates (PF7, ADR-0008)

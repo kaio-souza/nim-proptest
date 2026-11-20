@@ -102,6 +102,6 @@ Rules of the check:
 | DOC2 | Writing generators guide | done | doc | n/a | [`GENERATORS.md`](GENERATORS.md); its example `examples/generators.nim` runs in CI |
 | DOC3 | Property patterns cookbook | done | doc | n/a | [`PATTERNS.md`](PATTERNS.md); its example `examples/patterns.nim` runs in CI |
 | DOC4 | Stateful testing tutorial | done | doc | n/a | [`STATEFUL.md`](STATEFUL.md); its example `examples/stateful.nim` runs in CI |
-| DOC5 | Configuration reference | pending | | | learning it alone |
-| DOC6 | Troubleshooting | pending | | | learning it alone |
+| DOC5 | Configuration reference | done | doc | n/a | [CONFIGURATION.md](CONFIGURATION.md); `scripts/check_docs.nim` (in `nimble trace`) fails if a setting, variable or define is missing |
+| DOC6 | Troubleshooting | done | doc | n/a | [TROUBLESHOOTING.md](TROUBLESHOOTING.md): reports shown are real output; heading links checked |
 | DOC7 | CHANGELOG | done | doc | n/a | |

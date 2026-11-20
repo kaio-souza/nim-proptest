@@ -7,6 +7,20 @@ All notable changes. Versions follow semantic versioning. Any change to the valu
 Everything since the last tag (v0.2.0). Work is grouped by theme, not by
 version: a release is cut when it is worth one, not per theme.
 
+### Learning it alone
+
+#### Added
+- Configuration reference (`docs/CONFIGURATION.md`): recipes for local
+  runs, CI, nightly runs, replaying and slow properties; every setting with
+  its default, environment variable, cost and when to change it; build
+  options and their effect on failure locations; what a replay needs.
+- Troubleshooting guide (`docs/TROUBLESHOOTING.md`): from the message you
+  see (gave up, flaky, warnings, a seed that does not replay, compile
+  errors) to its cause and fix, with real reports.
+- `scripts/check_docs.nim`, run by `nimble trace` in CI: fails when a
+  setting, environment variable or define is missing from the reference, or
+  when a link points to a heading that does not exist.
+
 ### Your platform and test runner
 
 New API only: the values generated for a given seed are unchanged (checked

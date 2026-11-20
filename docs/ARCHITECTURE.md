@@ -121,7 +121,8 @@ benchmarks/
   b_gen.nim            # cost per choice / value / case vs. a hand-written loop; allocation gate
   b_shrink.nim         # executions per reference bug; gate against baseline/shrink.json
 scripts/
-  check_traceability.nim
+  check_traceability.nim   # TRACEABILITY.md against the tests (ADR-0004)
+  check_docs.nim           # CONFIGURATION.md against the code; heading links in every doc
 ```
 
 Test names cite the SPEC IDs they verify; value tests use `V-<ID>`. Several tests use `forAll` on the library itself (dogfooding, Q5).
