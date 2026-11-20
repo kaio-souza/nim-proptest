@@ -1,6 +1,6 @@
 # ADR-0012: Bug-finding power: measured detection, coverage, boundaries and swarm testing
 
-- Status: Proposed
+- Status: Accepted (implemented in v0.3)
 - Date: 2026-11-20
 - Requirements: D1, D2, O4, PF10, G8, M2, RL8, PF8, S4, RL11, O2
 
@@ -59,6 +59,30 @@ At the start of each sequence, one choice per command decides whether that comma
 ### 6. Health checks (RL11) and verbosity (O2)
 
 They extend today's give-up message: a filter that rejects almost all values, generation taking most of the run time, collections constantly hitting their size limit, a generator with very few distinct values. Each check names its fix and can be disabled. `PROPTEST_VERBOSITY` selects `quiet | normal | verbose | debug`.
+
+## Implementation notes (v0.3)
+
+Measured with `b_find` on 100 seeds before deciding (20 seeds were too noisy to tell designs apart):
+
+| Planted bug | v0.2 | v0.3 |
+|---|---|---|
+| exact 1000 in `0..2000` | 1 | 68 |
+| 12 increments without reset (stateful) | 3 | 97 |
+| breaker: probe at exactly 1000 ms | 72 | 80 |
+| stateful queue, reverse, midpoint overflow, boundary 100 | 100 | 100 |
+| breaker: backoff cap (five reopenings) | 0 | 3 |
+
+Deviations from the decision above:
+
+- **Swarm is hybrid.** Swarm on every sequence (each command left out with probability 1/2, or 1/4) lowered the breaker boundary row from 72 to 57–59, because that bug needs all three commands. Swarm on half of the sequences (one choice, 0 = no swarm, so shrinking leaves it) keeps both gains.
+- **Hints come in two tiers.** Integer literals and `const` values used in the property's own code (found with `compiles(static(int64(x)))`) get half of the hinted draws; the test file's integer literals (read at compile time, most frequent first, at most 64) get the rest. Mining only the body missed constants used inside helper procs; mining only the file diluted the body's constants among dozens of literals (10/20 seeds instead of 20/20 in the test). Hints are used on 1 integer draw in 4 (1 in 8 found the exact boundary on 43/100 seeds, 1 in 4 on 78/100).
+- **Mined constants: adopted.** On the breaker boundary row the difference was 181/300 vs 192/300 with and without mining: no measurable harm, against 1 → 78 on the exact-boundary row (68 in the final version, whose hint index uses multiply-shift instead of a 64-bit division: the same distribution, another random stream; differences of ~10 points in 100 seeds are within that noise).
+- **Edge cases share one probability** (`edgeBias`, 0.25): integer edges as before, special floats at half of it, empty and single-element collections.
+- A new shrink pass (`lowerAndBump`) was needed: with the new distribution, a counterexample ended at `-1` because `0` was a different bug and nothing turned `(sign 1, magnitude 0)` into `(sign 0, magnitude 1)`.
+- `firstFailureAt` replaced "falsified after N passing cases", which counted cases run after the first failure (exploration continues to look for other bugs) and was misread more than once.
+- The backoff cap stays out of reach: no tested combination of swarm, hints and edge bias reaches five reopenings in a row. Targeted exploration (hill-climbing on a value such as `model.level`) is the known technique; it is left for after v0.4.
+
+Cost: about 6 µs more per property and 15–25% more per collection-heavy case than v0.2 (minimum of 400 runs each), from health checks, hints and stateful statistics. Every performance target that v0.2 met is still met.
 
 ## Consequences
 

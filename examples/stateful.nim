@@ -97,8 +97,10 @@ stateMachine BreakerSpec:
     postcondition: result == (if model.admits: "failed" else: "rejected")
     update: model.called(ok = false)
 
-  # Any wait, plus the waits around the timeout: bugs live at boundaries.
-  command advance(ms in oneOf(ints(0, 2000), elements([openFor - 1, openFor, openFor + 1]))):
+  # Any wait. `openFor` (1000) is a constant of this file, so waits of 999,
+  # 1000 and 1001 are proposed often (ADR-0012); `ints(0, 2000, near =
+  # [openFor])` would say it explicitly.
+  command advance(ms in ints(0, 2000)):
     run: clock.ms += ms
     update: model.now += ms
 

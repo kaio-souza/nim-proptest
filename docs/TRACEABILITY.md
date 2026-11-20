@@ -17,7 +17,7 @@ Rules of the check:
 | G5 | Tables, sets, refs | pending | | | v0.4 |
 | G6 | String alphabets | partial | t_gen | n/a | custom alphabets; Unicode pending |
 | G7 | Size control | done | t_choices | n/a | |
-| G8 | Edge-case bias | partial | t_choices, t_gen, t_values | n/a | integer and float limits; collection edge cases pending |
+| G8 | Edge-case bias | done | t_choices, t_gen, t_values, t_find | b_find | limits, special floats, empty and single collections (`edgeBias`); boundary hints: `near`, mined constants (ADR-0012) |
 | G9 | Float options and ranges | done | t_choices, t_gen | n/a | |
 | C1 | `map`, `filter`, `flatMap` | done | t_gen, t_engine, t_values | n/a | |
 | C2 | `oneOf`, `elements`, `constant` | done | t_gen | n/a | |
@@ -29,7 +29,7 @@ Rules of the check:
 | S1 | Integrated shrinking | done | t_choices, t_shrink, t_values | b_shrink | |
 | S2 | Shrunk values satisfy the generator | done | t_values | n/a | |
 | S3 | Deterministic shrinking | done | t_shrink, t_engine | b_shrink | |
-| S4 | Shrink budget | partial | t_shrink, t_engine | n/a | execution budget; time budget pending |
+| S4 | Shrink budget | done | t_shrink, t_engine, t_find | n/a | executions and time (`shrinkTimeBudget`); best counterexample so far |
 | S5 | Shrink quality targets | done | t_values | b_shrink | integers to the exact boundary, shortest strings and lists |
 | R1 | Seed and replay command on failure | done | t_engine, t_integration | n/a | |
 | R2 | `PROPTEST_SEED` | done | t_integration | n/a | |
@@ -44,19 +44,19 @@ Rules of the check:
 | A6 | `check`/`require` inside `forAll` | done | t_engine, t_integration | n/a | ADR-0009 |
 | A7 | `--panics:on` | done | t_integration | n/a | compile-time warning |
 | M1 | Model, system, commands | done | t_stateful | n/a | `stateMachine` macro; malformed machines rejected at compile time |
-| M2 | Random command sequences | done | t_stateful | b_gen | commands drawn among the enabled ones; arguments may read the model; 0 allocations per sequence |
+| M2 | Random command sequences | done | t_stateful, t_find | b_gen, b_find | commands drawn among the enabled ones; arguments may read the model; swarm testing; 0 allocations per sequence |
 | M3 | Sequence shrinking | done | t_stateful, t_choices | b_shrink | steps are spans deleted whole (ADR-0011); value test on 20 seeds |
 | M4 | Failures as Nim code | done | t_stateful | n/a | `replayCommands` block compiled and run by a test; `showCode` |
 | M5 | Invariants | done | t_stateful | n/a | |
 | M6 | Injectable time | done | t_stateful | n/a | time as a command; exact boundary found |
 | M7 | Parallel linearizability | deferred | | | after 1.0 |
-| D1 | `classify` | pending | | | v0.3, ADR-0012 |
-| D2 | `cover` | pending | | | v0.3, ADR-0012 |
+| D1 | `classify` | done | t_find | n/a | also `label`; discards and shrinking not counted |
+| D2 | `cover` | done | t_find | n/a | fails only when confidently below (Wilson 95%); per sequence in state machines |
 | D3 | Size statistics | deferred | | | |
 | O1 | Quiet exploration | done | t_integration | n/a | |
-| O2 | Verbosity levels | pending | | | |
+| O2 | Verbosity levels | done | t_find | n/a | `verbosity`, `PROPTEST_VERBOSITY` |
 | O3 | JSON report | pending | | | |
-| O4 | Statistics and warnings in the report | pending | | | |
+| O4 | Statistics and warnings in the report | done | t_find | n/a | labels, stateful commands and lengths, health-check warnings |
 | K1 | Per-property settings | done | t_engine | n/a | |
 | K2 | Environment defaults | partial | t_integration | n/a | `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`, `PROPTEST_DB` |
 | K3 | Settings validation | done | t_engine | n/a | |
@@ -72,10 +72,10 @@ Rules of the check:
 | RL5 | Multiple distinct failures | done | t_values | b_shrink | 20 seeds; exploration continues after the first failure |
 | RL6 | Generator errors are not failures | done | t_engine | n/a | |
 | RL7 | Bounded resources | done | t_choices, t_engine | n/a | `maxChoices`, overruns discarded |
-| RL8 | Per-case deadline | pending | | | |
+| RL8 | Per-case deadline | partial | t_find | n/a | slow cases fail and shrink; a case that never returns needs RL10 (after 1.0) |
 | RL9 | Crash breadcrumbs | done | t_integration | n/a | |
 | RL10 | Watchdog | deferred | | | |
-| RL11 | Health checks | partial | t_engine | n/a | filter rejection hint; other checks pending |
+| RL11 | Health checks | done | t_engine, t_find | n/a | filter, data too large, few distinct inputs, slow generation; `suppress` |
 | RL12 | Failure database robustness | pending | | | with R3 |
 | RL13 | Isolation in stateful tests | done | t_stateful | n/a | fresh model and setup per sequence; teardown after failures |
 | RL14 | Shrinker invariants | done | t_shrink | n/a | |
@@ -87,9 +87,9 @@ Rules of the check:
 | PF5 | Built-in generators without closures | done | bench | b_gen | `TypeGen` + `drawFrom` |
 | PF6 | Efficient shrinking | done | t_shrink | b_shrink | binary search, tried-sequence cache, merge pass |
 | PF7 | Deterministic performance gates | done | bench | b_shrink, b_gen | executions and allocations |
-| PF8 | Time budget per property | pending | | | |
+| PF8 | Time budget per property | done | t_find | n/a | `timeBudget`, `PROPTEST_TIME_BUDGET` |
 | PF9 | Compile-time benchmark | pending | | | |
-| PF10 | Lazy formatting | pending | | | inputs are already formatted only for the final report; test pending |
+| PF10 | Lazy formatting | done | t_find | n/a | inputs formatted only for the final report; static labels do not allocate per case |
 | Q1 | orc/arc × threads, no warnings | done | CI | n/a | also release/debug |
 | Q2 | macOS, Windows, devel | pending | | | |
 | Q3 | JS backend | deferred | | | |
@@ -100,7 +100,7 @@ Rules of the check:
 | Q8 | Examples compiled in CI | done | CI | n/a | |
 | DOC1 | README quickstart | done | doc | n/a | README snippets live in `examples/quickstart.nim` and `examples/tour.nim`, built and run in CI |
 | DOC2 | Writing generators guide | pending | | | |
-| DOC3 | Property patterns cookbook | pending | | | |
+| DOC3 | Property patterns cookbook | done | doc | n/a | [`PATTERNS.md`](PATTERNS.md); its example `examples/patterns.nim` runs in CI |
 | DOC4 | Stateful testing tutorial | done | doc | n/a | [`STATEFUL.md`](STATEFUL.md); its example `examples/stateful.nim` runs in CI |
 | DOC5 | Configuration reference | pending | | | |
 | DOC6 | Troubleshooting | pending | | | |

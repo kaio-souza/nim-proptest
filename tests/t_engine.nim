@@ -86,7 +86,9 @@ suite "engine":
     check r.overruns > 0
 
   test "C1/RL11: a filter that rejects too much stops the run with a hint":
-    let impossible = ints(0, 1_000_000).filter(proc(x: int): bool = x == 7)
+    # No literal here: constants of this file are mined as hints (ADR-0012),
+    # so `x == 7` would be found.
+    let impossible = ints(0, 1_000_000).filter(proc(x: int): bool = x * 2 == x + x + 1)
     let r = forAllResult(initSettings(seed = 11, cases = 10), x in impossible):
       discard
     check r.status == psGaveUp

@@ -9,7 +9,7 @@
 ## The buffers are allocated once per property and reused for every case and
 ## every shrink attempt: drawing a choice never allocates (PF4).
 
-import std/[fenv, bitops]
+import std/[fenv, bitops, monotimes, times, hashes]
 import prng
 
 type
@@ -44,6 +44,34 @@ type
     spans: seq[Span]        # reused buffer; see `addSpan`
     steps*: seq[string]     # stateful tests: steps as Nim code (recordInputs)
     machine*: string        # stateful tests: machine name (recordInputs)
+    caseId: int             # exploration case counter (labels)
+    collect: bool           # labels are counted only while exploring
+    slots: seq[LabelStat]   # static labels, by compile-time slot (PF10)
+    dynamic: seq[LabelStat] # labels whose text is computed (`label`)
+    lengthHist*: array[8, int] # stateful: sequence lengths 0, 1, 2-3, 4-7, ... 64+
+    edgeCut: uint64         # edge proposals when a 16-bit draw is below this (G8)
+    hints: seq[int64]       # boundary hints of the property (ADR-0012)
+    nPrimary: int           # the first `nPrimary` hints come from the property itself
+    hintsSet: bool
+    timing*: bool           # health check: this case measures generation time
+    genNs*: int64           # generation time measured in timed cases
+    genStart: MonoTime
+
+  LabelKind* = enum
+    lkClassify  ## `classify(cond, "name")`
+    lkCover     ## `cover(percent, cond, "name")`
+    lkLabel     ## `label(text)`
+    lkCommand   ## stateful: a command ran
+    lkDisabled  ## stateful: a command's precondition was false
+
+  LabelStat* = object
+    ## How often a label was hit while exploring (D1, D2).
+    name*: string
+    kind*: LabelKind
+    required*: float        ## `cover`: required percentage of cases.
+    cases*: int             ## Cases (sequences, for state machines) that hit it.
+    events*: int            ## Hits in total (steps, for state machines).
+    lastCase, caseEvents: int
 
   Span* = tuple[start, stop: int]
     ## Choices `start ..< stop` that make one element of a collection or one
@@ -56,6 +84,9 @@ type
 
 const
   defaultMaxChoices* = 8192
+  defaultEdgeBias* = 0.25
+    ## Share of exploration proposals that are edge cases (G8): integer
+    ## limits, 0 and 1, special floats, empty and single-element collections.
   printableAlphabet* = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" &
     "0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
     ## Printable ASCII, simplest characters first.
@@ -77,8 +108,10 @@ const charOrder* = buildCharOrder()
 
 # ------------------------------------------------------------------ lifecycle
 
-proc newChoiceSource*(seed: uint64; maxChoices = defaultMaxChoices): ChoiceSource =
-  result = ChoiceSource(rng: initXoshiro256(seed), maxChoices: maxChoices)
+proc newChoiceSource*(seed: uint64; maxChoices = defaultMaxChoices;
+                      edgeBias = defaultEdgeBias): ChoiceSource =
+  result = ChoiceSource(rng: initXoshiro256(seed), maxChoices: maxChoices,
+                        edgeCut: uint64(clamp(edgeBias, 0.0, 1.0) * 65536.0))
   result.buf = newSeq[uint64](maxChoices)
   result.prefix = newSeqOfCap[uint64](maxChoices)
   result.spans = newSeqOfCap[Span](64)
@@ -97,11 +130,14 @@ proc startRandom*(src: ChoiceSource; size: int) =
   ## Prepares a new exploration case of the given size.
   src.resetCase(size)
   src.mode = smRandom
+  inc src.caseId
+  src.collect = true
 
 proc startReplay*(src: ChoiceSource; candidate: openArray[uint64]; size: int) =
   ## Prepares a case that replays `candidate` (zeros after its end).
   src.resetCase(size)
   src.mode = smReplay
+  src.collect = false
   src.prefix.setLen(candidate.len)
   for i in 0 ..< candidate.len:
     src.prefix[i] = candidate[i]
@@ -109,6 +145,10 @@ proc startReplay*(src: ChoiceSource; candidate: openArray[uint64]; size: int) =
 proc choices*(src: ChoiceSource): seq[uint64] =
   ## Copy of the choices consumed by the current case so far.
   src.buf[0 ..< src.count]
+
+proc choicesHash*(src: ChoiceSource): Hash =
+  ## Hash of the choices consumed so far, without copying them.
+  hash(src.buf.toOpenArray(0, src.count - 1))
 
 proc choiceCount*(src: ChoiceSource): int {.inline.} =
   ## Number of choices consumed by the current case so far.
@@ -128,6 +168,71 @@ proc size*(src: ChoiceSource): int {.inline.} =
   src.size
 
 proc isRandom*(src: ChoiceSource): bool {.inline.} = src.mode == smRandom
+
+proc beginGenerate*(src: ChoiceSource) {.inline.} =
+  ## Generators run from here: exceptions are generator errors (RL6).
+  src.phase = cpGenerate
+  if src.timing: src.genStart = getMonoTime()
+
+proc beginBody*(src: ChoiceSource) {.inline.} =
+  ## The property body runs from here: exceptions are failures.
+  if src.timing and src.phase == cpGenerate:
+    src.genNs += (getMonoTime() - src.genStart).inNanoseconds
+  src.phase = cpBody
+
+# -------------------------------------------------------------------- labels
+
+proc hit(st: var LabelStat; caseId: int) {.inline.} =
+  inc st.events
+  if st.lastCase != caseId:
+    st.lastCase = caseId
+    st.caseEvents = 0
+    inc st.cases
+  inc st.caseEvents
+
+proc recordLabel*(src: ChoiceSource; slot: int; cond: bool; name: string;
+                  kind: LabelKind; required = 0.0) {.inline.} =
+  ## Counts a static label (`classify`, `cover`, stateful statistics). `slot`
+  ## is assigned at compile time, so this does not allocate per case (PF10).
+  if src.isNil or not src.collect: return
+  if slot >= src.slots.len: src.slots.setLen(slot + 1)
+  if src.slots[slot].name.len == 0:
+    src.slots[slot].name = name
+    src.slots[slot].kind = kind
+    src.slots[slot].required = required
+  if cond: src.slots[slot].hit(src.caseId)
+
+proc recordDynamic*(src: ChoiceSource; name: string) =
+  ## Counts a label whose text is computed (`label($x.kind)`).
+  if src.isNil or not src.collect: return
+  for st in src.dynamic.mitems:
+    if st.name == name:
+      st.hit(src.caseId)
+      return
+  src.dynamic.add LabelStat(name: name, kind: lkLabel)
+  src.dynamic[^1].hit(src.caseId)
+
+proc recordLength*(src: ChoiceSource; steps: int) {.inline.} =
+  ## Stateful: histogram of sequence lengths, no allocation.
+  if src.isNil or not src.collect: return
+  let bucket = if steps <= 0: 0 else: min(7, 1 + fastLog2(steps))
+  inc src.lengthHist[bucket]
+
+proc discardLabels*(src: ChoiceSource) =
+  ## Forgets what the current case counted: it was discarded.
+  for list in [addr src.slots, addr src.dynamic]:
+    for st in list[].mitems:
+      if st.lastCase == src.caseId and st.caseEvents > 0:
+        dec st.cases
+        st.events -= st.caseEvents
+        st.caseEvents = 0
+        st.lastCase = 0
+
+proc labelStats*(src: ChoiceSource): seq[LabelStat] =
+  ## Every label counted so far, static ones first.
+  for st in src.slots:
+    if st.name.len > 0: result.add st
+  result.add src.dynamic
 
 # -------------------------------------------------------------- core drawing
 
@@ -164,23 +269,24 @@ proc drawIndex*(src: ChoiceSource; n: int): int {.inline.} =
   int(src.drawUpTo(uint64(n - 1)))
 
 proc proposeMagnitude(src: ChoiceSource; maxMag: uint64): uint64 {.inline.} =
-  ## Random-mode distribution for magnitudes (2 PRNG calls): 0 and 1 with
-  ## 1/16 each, the maximum with 2/16 (type limits are where bugs live),
-  ## small values up to the size with 5/16, values of up to `wideBits`
-  ## random bits with 7/16. Only exploration uses it: the shrink order does
-  ## not depend on it, so a slightly uneven reduction is harmless here.
+  ## Random-mode distribution for magnitudes (2 PRNG calls). With
+  ## probability `edgeBias` (default 1/4) an edge: 0 (1/4 of edges), 1 (1/4)
+  ## or the maximum (1/2: type limits are where bugs live). Otherwise small
+  ## values up to the size (5/12) or values of up to `wideBits` random bits
+  ## (7/12). Only exploration uses it: the shrink order does not depend on it.
   let r = src.rng.next()
-  let strategy = r and 15
-  if strategy == 0: return 0
-  if strategy <= 2: return maxMag
-  if strategy == 3: return min(1'u64, maxMag)
+  if (r and 0xFFFF) < src.edgeCut:
+    case (r shr 16) and 3
+    of 0: return 0
+    of 1: return min(1'u64, maxMag)
+    else: return maxMag
   let x = src.rng.next()
   var limit: uint64
-  if strategy <= 8:
+  if ((r shr 16) and 0xFFFF) < 27307:   # 5/12 of 65536
     limit = uint64(max(src.size, 1))
   else:
     # 1 .. wideBits, by multiply-shift instead of a slow 64-bit `mod`.
-    let bits = 1 + int((((r shr 4) and 63) * uint64(src.wideBits)) shr 6)
+    let bits = 1 + int((((r shr 32) and 63) * uint64(src.wideBits)) shr 6)
     limit = if bits >= 64: high(uint64) else: (1'u64 shl bits) - 1
   let b = min(maxMag, limit)
   if b == high(uint64): return x
@@ -196,11 +302,84 @@ proc drawMagnitude*(src: ChoiceSource; maxMag: uint64): uint64 {.inline.} =
   ## while exploring. Shrinks toward 0.
   drawImpl(src, maxMag, src.proposeMagnitude(maxMag))
 
-proc drawInt*[T: SomeInteger](src: ChoiceSource; lo, hi: T): T =
+const hintMask = 3   # hints on 1/4 of integer draws (measured, ADR-0012)
+
+proc useHints*(src: ChoiceSource; primary: openArray[int64]; secondary: openArray[int64] = []) =
+  ## Boundary hints for the whole property (ADR-0012): while exploring,
+  ## integer draws sometimes propose `h - 1`, `h` or `h + 1`. `primary`
+  ## hints (named in the property itself) get half of the hinted draws.
+  ## Set once.
+  ## Duplicates are harmless (a slightly larger weight), so they are kept:
+  ## no quadratic de-duplication per property.
+  if src.hintsSet: return
+  src.hintsSet = true
+  src.hints.setLen(0)
+  src.hints.add primary
+  src.nPrimary = primary.len
+  src.hints.add secondary
+
+proc forceInt[T: SomeInteger](src: ChoiceSource; lo, hi, v: T): T =
+  ## Records the choices that `drawInt(lo, hi)` would read to produce `v`
+  ## (same layout), so a hinted value shrinks like any other.
+  when T is SomeUnsignedInt:
+    T(uint64(lo) + drawImpl(src, uint64(hi) - uint64(lo), uint64(v) - uint64(lo)))
+  else:
+    let l = int64(lo)
+    let h = int64(hi)
+    let x = int64(v)
+    let origin = if l > 0: l elif h < 0: h else: 0'i64
+    let up = cast[uint64](h) - cast[uint64](origin)
+    let down = cast[uint64](origin) - cast[uint64](l)
+    let above = cast[uint64](x) - cast[uint64](origin)
+    let below = cast[uint64](origin) - cast[uint64](x)
+    if down == 0:
+      T(cast[int64](cast[uint64](origin) + drawImpl(src, up, above)))
+    elif up == 0:
+      T(cast[int64](cast[uint64](origin) - drawImpl(src, down, below)))
+    elif x < origin:
+      discard drawImpl(src, 1, 1'u64)
+      T(cast[int64](cast[uint64](origin) - (drawImpl(src, down - 1, below - 1) + 1)))
+    else:
+      discard drawImpl(src, 1, 0'u64)
+      T(cast[int64](cast[uint64](origin) + drawImpl(src, up, above)))
+
+proc pickHint[T: SomeInteger](src: ChoiceSource; lo, hi: T; local: openArray[int64];
+                              v: var T): bool =
+  ## With probability 1/4, one of `local` or the property's hints, +-1,
+  ## when it falls in `lo .. hi`.
+  let total = local.len + src.hints.len
+  if total == 0: return false
+  let r = src.rng.next()
+  if (r and hintMask) != 0: return false
+  # Half of the time among the hints named in the property (`near`, the
+  # body's literals and constants); otherwise among all, biased to the front
+  # (the file's most frequent literals).
+  # Indices by multiply-shift on 16-bit slices: no 64-bit division.
+  template below(bits: uint64; n: int): int = int(((bits and 0xFFFF) * uint64(n)) shr 16)
+  let first = local.len + src.nPrimary
+  let i = if first > 0 and ((r shr 2) and 1) == 0: below(r shr 8, first)
+          else: min(below(r shr 8, total), below(r shr 24, total))
+  let h = if i < local.len: local[i] else: src.hints[i - local.len]
+  let off = int64(below(r shr 40, 3)) - 1
+  if (off < 0 and h == low(int64)) or (off > 0 and h == high(int64)): return false
+  let x = h + off
+  when T is SomeUnsignedInt:
+    if x < 0 or uint64(x) < uint64(lo) or uint64(x) > uint64(hi): return false
+  else:
+    if x < int64(lo) or x > int64(hi): return false
+  v = T(x)
+  true
+
+proc drawInt*[T: SomeInteger](src: ChoiceSource; lo, hi: T; near: openArray[int64] = []): T =
   ## Integer in `lo .. hi`. Shrinks toward the value of the range closest to
-  ## zero; positive values are simpler than negative ones.
+  ## zero; positive values are simpler than negative ones. While exploring,
+  ## values next to `near` and to the property's hints are proposed now and
+  ## then (ADR-0012).
   if lo > hi:
     raise newException(ValueError, "drawInt: lo (" & $lo & ") > hi (" & $hi & ")")
+  if src.mode == smRandom and (near.len > 0 or src.hints.len > 0):
+    var v: T
+    if src.pickHint(lo, hi, near, v): return src.forceInt(lo, hi, v)
   when T is SomeUnsignedInt:
     T(uint64(lo) + src.drawMagnitude(uint64(hi) - uint64(lo)))
   else:
@@ -233,7 +412,8 @@ const
   maxScale = 970'u64
 
 proc proposeFloatKind(src: ChoiceSource; allowNaN, allowInf: bool): uint64 =
-  if src.rng.below(9) != 0: return fkFinite
+  # Special values with half the edge share (1/8 by default).
+  if (src.rng.next() and 0xFFFF) >= src.edgeCut div 2: return fkFinite
   var kinds: array[7, uint64]
   var n = 0
   for k in [fkNegZero, fkMax, fkSubnormal, fkEpsilon]:
@@ -304,7 +484,11 @@ proc initMany*(src: ChoiceSource; minLen, maxLen: int): Many =
   if src.mode == smRandom and maxLen > minLen:
     let extra = uint64(maxLen - minLen)
     let typical = uint64(2 * max(src.size, 1))
-    if src.rng.below(7) != 0:
+    let r = src.rng.next()
+    if (r and 0xFFFF) < src.edgeCut:
+      # Edge (G8): the shortest collection, or one element more.
+      result.target = minLen + int((r shr 16) and 1)
+    else:
       result.target = minLen + int(src.rng.below(min(extra, typical)))
 
 proc more*(src: ChoiceSource; m: var Many): bool =

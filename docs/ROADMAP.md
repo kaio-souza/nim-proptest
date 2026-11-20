@@ -6,19 +6,20 @@ Legend: [x] done (implemented and tested) · [ ] pending · [~] deferred
 
 ## Where we are
 
-**v0.2 implemented and tested (stateful testing), not yet published.** v0.1 ran green on GitHub CI; the v0.2 changes have been checked locally on the full CI matrix. Next: v0.3. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 64 done or partial, all with evidence).
+**v0.3 implemented and tested (bug-finding power, coverage, budgets, health checks), not yet published.** v0.2 is tagged and on GitHub; the v0.3 changes have been checked locally on the full CI matrix. Next: v0.4. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 72 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
-| Tests | 87, all passing on orc/arc × threads on/off × debug/release |
+| Tests | 107, all passing on orc/arc × threads on/off × debug/release |
 | Sanitizers | ASan, UBSan and leak checks clean on orc and arc |
 | Golden tests | PRNG and hash match the authors' reference C code and the official FNV-1a vectors; generated values pinned for seed 42 |
 | Value tests | the reference bugs of SPEC Part IV shrink to their exact minima, including the stateful queue (4 steps, 20/20 seeds); multiple bugs and no slippage verified on 20 seeds each (100/100 on 100 seeds) |
-| Shrink cost (gate) | 17 to 205 property executions per reference bug (target < 500) |
-| Allocation gate | 0 allocations per choice, per generated integer and per stateful sequence |
+| Shrink cost (gate) | 9 to 214 property executions per reference bug (target < 500) |
+| Bug-finding (gate) | `b_find`, 100 seeds: exact boundary in a range 1 → 68, a bug needing a command to stay away 3 → 97, breaker probe 72 → 80, no row worse (v0.2 → v0.3) |
+| Allocation gate | 0 allocations per choice, per generated integer and per stateful sequence; static labels checked by a test |
 | External user | `nim-circuit-breaker` model test (its V2/Q5): 1000 sequences, three planted model mistakes found and shrunk |
 
-The test suite found and fixed real problems during development: in v0.2, a leak under LeakSanitizer when a replayed sequence raised (an ARC behavior of Nim 2.2.4 with temporaries passed to a raising call). In v0.1, undefined behavior (`countLeadingZeroBits(0)`) that produced out-of-range integers **only in release builds**, and multi-bug detection that depended on luck with the seed (exploration now continues after the first failure).
+The test suite found and fixed real problems during development: in v0.3, a local minimum of the shrinker (`-1` was not shrunk to `1` when `0` was a different bug), now handled by a new pass; in v0.2, a leak under LeakSanitizer when a replayed sequence raised (an ARC behavior of Nim 2.2.4 with temporaries passed to a raising call). In v0.1, undefined behavior (`countLeadingZeroBits(0)`) that produced out-of-range integers **only in release builds**, and multi-bug detection that depended on luck with the seed (exploration now continues after the first failure).
 
 ## v0.1: smallest useful core
 
@@ -52,11 +53,13 @@ Measured on an Intel Core i5-10210U laptop (noisy: repeated runs vary by up to 2
 |---|---|---|---|
 | Drawing one choice | < 5 ns / < 20 ns | 3.6–8.6 ns / 70 ns | release borderline, debug missed |
 | Generating an `int` | < 10 ns / < 40 ns | 20–33 ns / 280 ns | missed |
-| Per-case overhead incl. an `int` | < 200 ns / < 1 µs | 64 ns / 1.6 µs | release met, debug missed |
-| Run of 100 cases, `x in int` | milliseconds (PF2) | 0.006 ms / 0.16 ms | met |
-| Run of 100 cases, `xs in seq[int]` | milliseconds (PF2) | 0.16 ms / 1.5 ms | met |
-| Shrinking a reference bug | < 500 executions | 17–205 | met |
-| One stateful sequence, 50 steps max (v0.2) | none set | ~0.6 µs release, 0 allocations | |
+| Per-case overhead incl. an `int` | < 200 ns / < 1 µs | 64 ns (v0.2) → ~120 ns (v0.3) / 1.6 µs | release met, debug missed |
+| Run of 100 cases, `x in int` | milliseconds (PF2) | 0.006 → 0.012 ms / 0.16 ms | met |
+| Run of 100 cases, `xs in seq[int]` | milliseconds (PF2) | 0.19 → 0.24 ms / 1.5 ms | met |
+| Shrinking a reference bug | < 500 executions | 9–214 | met |
+| One stateful sequence, 50 steps max | none set | ~0.6 µs (v0.2) → ~0.9 µs (v0.3), 0 allocations | |
+
+v0.3 costs (minimum of 400 runs, against v0.2 built from its tag): about 6 µs more per property and 15–25% more for collection-heavy cases. They come from health checks (input hashes, sampled generation timing), boundary hints on every integer draw (one more PRNG call, a hinted value in 1 draw of 4) and stateful statistics and swarm choices. Every target that was met is still met; the per-case budget has less room left.
 
 Missed targets go to v0.4 below. Already done to get here: inlined hot paths, a fixed choice buffer instead of `seq.add`, no 64-bit division in the exploration distribution, constant-time float scaling (from 149 ns to ~55 ns per float).
 
@@ -92,14 +95,18 @@ Order of work (each step lands with tests, a value test and, where it touches th
 7. **Docs**: property patterns cookbook (DOC3), and a section of the tutorial on reading coverage.
 
 - [x] Bug-finding benchmark with detection-rate gate (`benchmarks/b_find.nim`, in `nimble gate`). Baseline before v0.3, 20 seeds each: reverse, midpoint overflow, boundary 100, stateful queue 20/20; breaker probe at exactly 1000 ms 16/20; **exact 1000 in 0..2000 0/20; breaker backoff cap 0/20**
-- [ ] Median cases to the first failure in `b_find` (needs `PropertyResult.firstFailureAt`)
-- [ ] `classify` and `cover`; stateful statistics (D1, D2, O4, PF10)
-- [ ] Edge-case bias and boundary hints (G8)
-- [ ] Swarm testing for state machines (M2, new)
-- [ ] Per-case deadline; time budgets for runs and shrinking (RL8, PF8, S4)
-- [ ] Health checks; verbosity levels (RL11, O2)
-- [ ] Property patterns cookbook (DOC3)
-- [ ] Experiment: constants mined from the property as automatic boundary hints, kept only if `b_find` improves (ADR-0012)
+- [x] Median cases to the first failure in `b_find` (`PropertyResult.firstFailureAt`; reports say "falsified at case N")
+- [x] `classify`, `cover`, `label`; stateful statistics: commands ran, blocked by preconditions, sequence lengths (D1, D2, O4, PF10)
+- [x] Edge-case bias for integers, floats and collections, with `edgeBias`; boundary hints with `ints(..., near = [...])` (G8)
+- [x] Swarm testing for state machines, hybrid: half of the sequences (M2)
+- [x] Per-case deadline; time budgets for runs and shrinking (RL8 partial: a case that never returns needs RL10; PF8, S4)
+- [x] Health checks: data too large, few distinct inputs, slow generation, `suppress`; verbosity levels (RL11, O2)
+- [x] Property patterns cookbook (DOC3), `examples/patterns.nim` in CI; tutorial updated
+- [x] Experiment: mined constants, **adopted**: the body's literals and constants get half of the hinted draws, the file's literals the rest (ADR-0012)
+
+Measured on `b_find` with 100 seeds, before v0.3 → v0.3: exact 1000 in `0..2000` 1 → 68; 12 increments without reset 3 → 97; breaker probe at exactly 1000 ms 72 → 80; stateful queue, reverse, overflow, boundary 100: 100 → 100; breaker backoff cap 0 → 3. Rows move by up to ~10 points between equivalent implementations (a different random stream), so only larger changes are read as effects.
+
+What did **not** work, recorded for later: plain swarm (every sequence) lowered the breaker boundary row (72 → 57); the hybrid keeps both gains. The breaker's backoff cap (five reopenings, each after the right wait) stays out of reach of random sequences: a "deep state". Targeted exploration (maximize a value such as `model.level`) is the known technique for it, candidate for after v0.4.
 
 Decided in ADR-0012: deadline off by default (`PROPTEST_DEADLINE` for CI); `cover` in state machines counts per sequence.
 

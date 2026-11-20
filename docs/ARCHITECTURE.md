@@ -16,6 +16,8 @@ Ties the ADRs into one picture of how a property runs. Modules marked *(planned)
 | **Shortlex order** | Shorter sequence is smaller; same length compares choice by choice. Shrinking only moves down this order. |
 | **Flaky** | A property whose final counterexample does not fail again in both re-runs. |
 | **Span** | Choices that make one collection element or one stateful step, with its "continue" choice; the shrinker deletes it whole ([ADR-0011](decisions/0011-stateful-testing.md)). |
+| **Hint** | An integer proposed as `v - 1`, `v`, `v + 1` while exploring: from `near`, the property's constants or the test file's literals ([ADR-0012](decisions/0012-bug-finding-power.md)). |
+| **Swarm** | A stateful sequence that leaves some commands out, so long runs of the others become likely. |
 | **Step** | One command of a stateful sequence, with its arguments; printed as a Nim call. |
 | **Failure database** | `.proptest/` directory with the minimal sequences of past failures ([ADR-0003](decisions/0003-reproducibility-and-failure-database.md)). |
 
@@ -35,7 +37,9 @@ src/
     report.nim                 # text report
     database.nim               # run seed, crash breadcrumbs (ADR-0003); failure database (planned)
     derive.nim                 # (planned) compile-time generators for objects and distinct types
-    stateful.nim               # stateMachine and replayCommands macros, sequence runner (ADR-0011)
+    stateful.nim               # stateMachine and replayCommands macros, sequence runner, swarm (ADR-0011, ADR-0012)
+    labels.nim                 # classify / cover / label rewriting into compile-time slots (ADR-0012)
+    mining.nim                 # integer constants of the property and the test file as boundary hints (ADR-0012)
     unittest2.nim              # (planned) optional adapter, explicit import (ADR-0002)
 ```
 
@@ -68,7 +72,10 @@ forAll(...)
        ├─ generators build the inputs (overrun → invalid case)
        ├─ run the body (assertions raise, exceptions caught)
        ├─ ok / discarded (assume) / failed (signature) / generator error
-       └─ health checks: discard ratio and filter rejections (generation time and sizes planned)
+       ├─ labels counted (classify / cover / label; stateful commands), not for discarded cases
+       └─ health checks: discards and filters (stop), data too large, few distinct inputs,
+          generation time sampled on 1 case in 8 (warnings)
+  coverage: `cover` requirements confidently missed → psInsufficientCoverage
   on failure, for each distinct signature (up to the limit):
        ├─ shrink the sequence: delete spans (elements, steps), delete chunks, zero,
        │    lower (binary search), then merge

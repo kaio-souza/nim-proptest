@@ -154,11 +154,22 @@ proc oneOf*[T](gens: varargs[Gen[T]]): Gen[T] =
 proc bools*(): Gen[bool] =
   newGen(proc(src: ChoiceSource): bool = src.drawBool())
 
-proc ints*[T: SomeInteger](lo, hi: T): Gen[T] =
+proc ints*[T: SomeInteger](lo, hi: T; near: openArray[T] = []): Gen[T] =
   ## Integers in `lo .. hi`; shrinks toward the value closest to zero.
+  ## `near` lists boundaries of your domain (a timeout, a capacity): while
+  ## exploring, `v - 1`, `v` and `v + 1` are proposed now and then (G8,
+  ## ADR-0012). Shrinking is unchanged.
   if lo > hi:
     raise newException(ValueError, "ints: lo > hi")
-  newGen(proc(src: ChoiceSource): T = src.drawInt(lo, hi))
+  if near.len == 0:
+    return newGen(proc(src: ChoiceSource): T = src.drawInt(lo, hi))
+  var hints: seq[int64]
+  for v in near:
+    when T is uint64 or T is uint:
+      if uint64(v) <= uint64(high(int64)): hints.add int64(v)
+    else:
+      hints.add int64(v)
+  newGen(proc(src: ChoiceSource): T = src.drawInt(lo, hi, hints))
 
 proc ints*(): Gen[int] =
   ## Any `int`.

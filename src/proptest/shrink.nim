@@ -5,7 +5,7 @@
 ## same signature. Accepted results are always strictly smaller, so it
 ## terminates; a budget of executions bounds its cost (S4, PF6).
 
-import std/[sets, hashes]
+import std/[sets, hashes, monotimes, times]
 import choices
 
 export Span
@@ -24,6 +24,8 @@ type
     budget: int
     tried: HashSet[Hash]
     probe: Probe
+    stopAt: MonoTime         # time budget (S4); zero = none
+    timedOut*: bool          ## The time budget ended shrinking early.
 
 proc shortlexLess*(a, b: openArray[uint64]): bool =
   ## Shorter is smaller; equal lengths compare choice by choice.
@@ -33,10 +35,17 @@ proc shortlexLess*(a, b: openArray[uint64]): bool =
   false
 
 proc initShrinker*(start: seq[uint64]; budget: int; probe: Probe;
-                   spans: seq[Span] = @[]): Shrinker =
-  Shrinker(best: start, bestSpans: spans, budget: budget, probe: probe)
+                   spans: seq[Span] = @[]; timeBudgetMs = 0): Shrinker =
+  ## `budget` bounds executions; `timeBudgetMs` (0 = none) bounds time (S4).
+  result = Shrinker(best: start, bestSpans: spans, budget: budget, probe: probe)
+  if timeBudgetMs > 0:
+    result.stopAt = getMonoTime() + initDuration(milliseconds = timeBudgetMs)
 
-proc exhausted*(sh: Shrinker): bool {.inline.} = sh.executions >= sh.budget
+proc exhausted*(sh: var Shrinker): bool {.inline.} =
+  if sh.executions >= sh.budget: return true
+  if sh.stopAt != MonoTime() and getMonoTime() > sh.stopAt:
+    sh.timedOut = true
+    return true
 
 proc attempt(sh: var Shrinker; candidate: seq[uint64]): bool =
   ## Tries a candidate; adopts what it actually consumed when that is smaller.
@@ -131,6 +140,19 @@ proc mergeChunks(sh: var Shrinker): bool =
           dec j
       i = min(i - 1, sh.best.len - k)
 
+proc lowerAndBump(sh: var Shrinker): bool =
+  ## Lowers a choice by one and raises the next one by one: `(1, 0)` →
+  ## `(0, 1)`, i.e. `-1` → `1` in the sign + magnitude layout of integers,
+  ## when 0 itself is not a counterexample. Fallback pass.
+  var i = 0
+  while i + 1 < sh.best.len and not sh.exhausted:
+    if sh.best[i] > 0 and sh.best[i + 1] < high(uint64):
+      var cand = sh.best
+      dec cand[i]
+      inc cand[i + 1]
+      if sh.attempt(cand): result = true
+    inc i
+
 proc shrink*(sh: var Shrinker) =
   ## Runs the cheap passes until none makes progress, then the merge pass;
   ## repeats while anything improves and the budget lasts.
@@ -142,3 +164,4 @@ proc shrink*(sh: var Shrinker) =
     if sh.zeroChunks(): progress = true
     if sh.minimizeValues(): progress = true
     if not progress and sh.mergeChunks(): progress = true
+    if not progress and sh.lowerAndBump(): progress = true

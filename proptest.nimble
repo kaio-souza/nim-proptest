@@ -1,12 +1,12 @@
 # Package
 
-version       = "0.2.0"
+version       = "0.3.0"
 author        = "Kaio Souza"
 description   = "Property-based testing for Nim: generators from types, integrated shrinking and stateful testing, with reproducible failures."
 license       = "MIT"
 srcDir        = "src"
 skipDirs      = @["tests", "benchmarks", "examples", "docs", "scripts"]
-# 0.2.0 is unreleased: see CHANGELOG.md and docs/ROADMAP.md.
+# 0.3.0 is unreleased: see CHANGELOG.md and docs/ROADMAP.md.
 
 # Dependencies (ADR-0002: standard library only)
 

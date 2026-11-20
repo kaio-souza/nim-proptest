@@ -1,18 +1,21 @@
 ## Bug-finding power (ADR-0012): planted bugs, each run on fixed seeds with
-## default settings; how many seeds find the bug. Deterministic for fixed
-## seeds, so it can gate CI like shrink executions (ADR-0008):
+## default settings: how many seeds find the bug, and the median case number
+## of the first failure among those that do. Deterministic for fixed seeds,
+## so it can gate CI like shrink executions (ADR-0008):
 ##
 ##   b_find            print the table
-##   b_find --check    fail if a detection rate drops below the baseline
+##   b_find --check    fail if a detection rate drops, or a median rises,
+##                     against the baseline
 ##   b_find --update   rewrite benchmarks/baseline/find.json
 ##
 ## The rows of v0.2 are the gaps found while testing real code: they are
 ## expected to be low before v0.3 and must go up as v0.3 lands.
 
-import std/[os, json, strformat, tables]
+import std/[os, json, strformat, tables, algorithm, strutils]
 import ../src/proptest
 
-const seeds = 20
+let seeds = (if existsEnv("B_FIND_SEEDS"): parseInt(getEnv("B_FIND_SEEDS")) else: 20)
+  ## 20 for the gate; more (B_FIND_SEEDS) to decide between designs.
 
 # --- Planted bugs over plain values -----------------------------------------
 
@@ -155,54 +158,87 @@ stateMachine QueueBug:
     postcondition: result == model.items[0]
     update: model.items.delete(0)
 
+# A bug that needs one command to stay away: 12 increments with no reset in
+# between, among other commands. The classic case for swarm testing.
+type Counter = ref object
+  n: int
+
+stateMachine NoReset:
+  model: 0
+  setup:
+    let c = Counter()
+  command incr():
+    run:
+      inc c.n
+      c.n < 12                 # planted: breaks at 12
+    postcondition: result
+    update: inc model
+  command reset():
+    run: c.n = 0
+    update: model = 0
+  command read():
+    run: c.n
+    postcondition: result == model
+  command noop():
+    run: discard
+  command peek():
+    run: c.n >= 0
+    postcondition: result
+
 # --- The suite ----------------------------------------------------------------
 
-type Row = tuple[name: string; found: proc(seed: uint64): bool]
+type Row = tuple[name: string; run: proc(seed: uint64): PropertyResult]
 
 proc s(seed: uint64): Settings = initSettings(seed = seed, name = "find")
 
 let rows: seq[Row] = @[
-  ("reverse drops last element", proc(seed: uint64): bool =
+  ("reverse drops last element", proc(seed: uint64): PropertyResult =
     let r = forAllResult(s(seed), xs in seq[int]):
       check buggyReverse(buggyReverse(xs)) == xs
-    not r.passed),
-  ("midpoint overflow (limits)", proc(seed: uint64): bool =
+    r),
+  ("midpoint overflow (limits)", proc(seed: uint64): PropertyResult =
     let r = forAllResult(s(seed), a in int, b in int):
       let m = midpoint(a, b)
       check m >= min(a, b) and m <= max(a, b)
-    not r.passed),
-  ("boundary 100 in 0..1000", proc(seed: uint64): bool =
+    r),
+  ("boundary 100 in 0..1000", proc(seed: uint64): PropertyResult =
     let r = forAllResult(s(seed), x in ints(0, 1000)):
       check clampPercent(x) >= 0
-    not r.passed),
-  ("exact 1000 in 0..2000", proc(seed: uint64): bool =
+    r),
+  ("exact 1000 in 0..2000", proc(seed: uint64): PropertyResult =
     let r = forAllResult(s(seed), ms in ints(0, 2000)):
       check nearTimeout(ms)
-    not r.passed),
-  ("stateful queue (3 push + 1 pop)", proc(seed: uint64): bool =
-    not stateMachineResult(QueueBug, s(seed)).passed),
-  ("breaker: probe at exactly 1000 ms", proc(seed: uint64): bool =
-    not stateMachineResult(BreakerBoundary, s(seed)).passed),
-  ("breaker: backoff cap (5 reopenings)", proc(seed: uint64): bool =
-    not stateMachineResult(BreakerCap, s(seed)).passed),
+    r),
+  ("stateful queue (3 push + 1 pop)", proc(seed: uint64): PropertyResult =
+    stateMachineResult(QueueBug, s(seed))),
+  ("breaker: probe at exactly 1000 ms", proc(seed: uint64): PropertyResult =
+    stateMachineResult(BreakerBoundary, s(seed))),
+  ("breaker: backoff cap (5 reopenings)", proc(seed: uint64): PropertyResult =
+    stateMachineResult(BreakerCap, s(seed))),
+  ("12 increments without reset", proc(seed: uint64): PropertyResult =
+    stateMachineResult(NoReset, s(seed))),
 ]
 
 const baselineFile = currentSourcePath().parentDir / "baseline" / "find.json"
 
 proc main() =
-  var current = initOrderedTable[string, int]()
-  echo &"""{"planted bug":<38} {"found":>9}"""
-  for (name, found) in rows:
-    var n = 0
+  var current = initOrderedTable[string, (int, int)]()
+  echo &"""{"planted bug":<38} {"found":>9} {"median case":>12}"""
+  for (name, run) in rows:
+    var at: seq[int]
     for seed in 1 .. seeds:
-      if found(uint64(seed)): inc n
-    current[name] = n
-    echo &"{name:<38} {n:>6}/{seeds}"
+      let r = run(uint64(seed))
+      if not r.passed: at.add r.firstFailureAt
+    at.sort()
+    let median = if at.len == 0: 0 else: at[at.len div 2]
+    current[name] = (at.len, median)
+    let shown = if at.len == 0: "-" else: $median
+    echo &"{name:<38} {at.len:>6}/{seeds} {shown:>12}"
 
   let args = commandLineParams()
   if "--update" in args:
     var j = newJObject()
-    for k, v in current: j[k] = %v
+    for k, v in current: j[k] = %*{"found": v[0], "median": v[1]}
     writeFile(baselineFile, j.pretty & "\n")
     echo "baseline updated: ", baselineFile
   elif "--check" in args:
@@ -212,8 +248,13 @@ proc main() =
       if not base.hasKey(k):
         echo "FAIL: no baseline for '", k, "' (run with --update)"
         failed = true
-      elif v < base[k].getInt:
-        echo &"FAIL: '{k}' found on {v}/{seeds} seeds, baseline {base[k].getInt}"
+        continue
+      let (bFound, bMedian) = (base[k]["found"].getInt, base[k]["median"].getInt)
+      if v[0] < bFound:
+        echo &"FAIL: '{k}' found on {v[0]}/{seeds} seeds, baseline {bFound}"
+        failed = true
+      elif v[0] == bFound and bFound > 0 and v[1] > bMedian:
+        echo &"FAIL: '{k}' median case {v[1]}, baseline {bMedian}"
         failed = true
     if failed: quit 1
     echo "OK: no detection regression against ", baselineFile.extractFilename

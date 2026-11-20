@@ -268,7 +268,7 @@ Same rule as `circuit_breaker`: **nothing is delivered without tests and benchma
 | RL3 flaky detection | a property that fails only on odd-numbered executions | reported as flaky, never as a counterexample |
 | RL4 failure identity | an assertion bug whose shrunk inputs would hit an unrelated `IndexDefect` | the reported counterexample still raises the original assertion |
 | RL5 multiple failures | two independent bugs in one function | both reported, each with its own minimal counterexample |
-| RL8 deadline | a function that loops forever when the input contains `42` | reported as a deadline failure with counterexample `[42]` |
+| RL8 deadline | a function that is slow (60 ms) when the input contains `42`; one that never returns needs the RL10 watchdog (ADR-0012) | reported as a deadline failure with counterexample `[42]` |
 | RL11 health check | `filter` that accepts 1 value in 10 000 | run stops early with a message suggesting a constructive generator |
 | A6 quiet assertions | a property with a failing `check` inside `std/unittest` | one failure reported by the runner, no intermediate output from shrinking |
 | PF6/PF7 shrink cost | each reference bug above | number of executions to reach the minimum, gated in CI |

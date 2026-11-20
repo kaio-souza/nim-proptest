@@ -2,7 +2,7 @@
 
 A **property-based testing library for the [Nim](https://nim-lang.org) programming language**, distributed as a Nimble package. State a rule, let the library generate the inputs, and get the **smallest** input that breaks it.
 
-> **Status: v0.2, usable, not yet in the Nimble index.** Properties over built-in and custom types, and stateful (model-based) tests, work today, with automatic shrinking and reproducible failures. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
+> **Status: v0.3, usable, not yet in the Nimble index.** Properties over built-in and custom types and stateful (model-based) tests work today, with automatic shrinking, reproducible failures, coverage statistics and boundary-seeking exploration. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
 
 ## Installation
 
@@ -32,7 +32,7 @@ The second property is wrong, and the report shows the **minimal** counterexampl
 
 ```
 [FAILED] custom generators shrink for free
-  Property 'quickstart.nim:20' falsified after 13 passing cases (0 discarded).
+  Property 'quickstart.nim:20' falsified at case 8 (50 cases passed, 0 discarded).
   Counterexample (1 choices, 45 shrink executions):
     n = 100
   Error: [PropertyFailed] check failed: n < 100
@@ -41,7 +41,7 @@ The second property is wrong, and the report shows the **minimal** counterexampl
   Replay: PROPTEST_SEED=17542877672211577899 ./quickstart
 ```
 
-Runnable versions: [`examples/quickstart.nim`](examples/quickstart.nim) (with planted bugs), [`examples/tour.nim`](examples/tour.nim) (every feature below) and [`examples/stateful.nim`](examples/stateful.nim) (the stateful tutorial); compiled and run in CI.
+Runnable versions: [`examples/quickstart.nim`](examples/quickstart.nim) (with planted bugs), [`examples/tour.nim`](examples/tour.nim) (every feature below), [`examples/patterns.nim`](examples/patterns.nim) (the patterns cookbook) and [`examples/stateful.nim`](examples/stateful.nim) (the stateful tutorial); compiled and run in CI.
 
 ## Writing properties
 
@@ -87,6 +87,14 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 | `maxDiscardRatio` | 10 | Give up after `cases × ratio` discarded cases |
 | `maxFailures` | 3 | Distinct failures reported per property |
 | `maxChoices` | 8192 | Random choices per case; larger cases are discarded |
+| `deadline` | 0 (off) | Per-case limit in ms: slower cases fail and are shrunk |
+| `timeBudget` | 0 (none) | Exploration time limit in ms; stops gracefully and says so |
+| `shrinkTimeBudget` | 0 (none) | Shrinking time limit per failure in ms; keeps the best so far |
+| `edgeBias` | 0.25 | Share of edge-case proposals (limits, 0, 1, special floats, empty and single collections) |
+| `mineConstants` | true | Integer constants of the property and the test file as boundary hints |
+| `swarm` | true | Stateful tests: half of the sequences leave some commands out |
+| `verbosity` | `vNormal` | `vQuiet`, `vNormal`, `vVerbose` (every case, every statistic), `vDebug` (shrink steps) |
+| `suppress` | `{}` | Health checks to skip: `hcLargeData`, `hcFewDistinct`, `hcSlowGeneration` |
 | `seed` | random | Fixes the run seed |
 | `name` | `file:line` | Property name; derives its own seed |
 
@@ -96,6 +104,9 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 | `PROPTEST_CASES` | Default `cases`, e.g. more in CI than locally |
 | `PROPTEST_MAX_SHRINKS` | Default `maxShrinks` |
 | `PROPTEST_DB` | Directory for local files (default `.proptest`), or `off` |
+| `PROPTEST_DEADLINE` | Default `deadline` in ms (e.g. set it in CI) |
+| `PROPTEST_TIME_BUDGET` | Default `timeBudget` in ms |
+| `PROPTEST_VERBOSITY` | `quiet`, `normal`, `verbose` or `debug` |
 
 ## Generators
 
@@ -107,7 +118,7 @@ Integers of every width (including `range` types), `float`/`float32` (including 
 
 | Generator | Values | Shrinks toward |
 |---|---|---|
-| `ints(lo, hi)`, `ints()` | integers in `lo .. hi` | the value closest to 0 |
+| `ints(lo, hi)`, `ints()`, `ints(lo, hi, near = [v])` | integers in `lo .. hi`; `near` proposes `v-1`, `v`, `v+1` | the value closest to 0 |
 | `floats(lo, hi)`, `floats(allowNaN, allowInf)` | floats | 0.0 |
 | `bools()` | `bool` | `false` |
 | `chars(alphabet)` | characters of `alphabet` | its first character |
@@ -141,6 +152,25 @@ let sortedPairs = newGen(proc(src: ChoiceSource): (int, int) =
   (a, b))
 ```
 
+## Finding more bugs, and seeing what was tested
+
+Passing says nothing about inputs that were never generated. Ways to check and to steer that (design: [ADR-0012](docs/decisions/0012-bug-finding-power.md); patterns: [docs/PATTERNS.md](docs/PATTERNS.md)):
+
+```nim
+forAll(initSettings(cases = 300), xs in seq[int]):
+  classify(xs.len == 0, "empty")          # share of cases, printed after the run
+  cover(20.0, xs.len >= 10, "ten or more") # fails if confidently below 20%
+  label("len " & $min(xs.len, 3))         # cases by a computed text
+  check ...
+```
+
+- **Boundaries.** Integers hit 0, 1, -1 and their type's limits; floats hit -0.0, NaN, infinities and subnormals; collections hit empty and single-element. Integer constants used in the property (`const openFor = 1000`), and integer literals of the test file, are proposed as `v - 1`, `v`, `v + 1`. For a boundary defined elsewhere: `ints(0, 2000, near = [openFor])`.
+- **Swarm testing** (state machines): half of the sequences leave some commands out, so long runs of the others become likely (a bug that needs 12 increments with no reset: found on 3 of 100 seeds before, 97 of 100 with it).
+- **Deadlines and budgets**: `deadline` makes a slow case a failure, shrunk to what makes it slow; `timeBudget` and `shrinkTimeBudget` stop early and say so.
+- **Health checks** warn, with a fix, about data too large for `maxChoices`, input spaces smaller than `cases`, and generation dominating the run time.
+
+The library's own bug-finding power is measured: [`benchmarks/b_find.nim`](benchmarks/b_find.nim) runs planted bugs on fixed seeds and CI fails if a detection rate drops.
+
 ## Results and failures
 
 - **Inside a unittest `test`**: a failing property fails the test with one report.
@@ -153,6 +183,7 @@ let sortedPairs = newGen(proc(src: ChoiceSource): (int, int) =
 | `psFlaky` | the minimal counterexample did not fail again: the property depends on time, global state, threads or I/O |
 | `psGaveUp` | too many cases discarded by `assume` or `filter` |
 | `psGeneratorError` | a generator raised: a bug in the generator, not in the code under test |
+| `psInsufficientCoverage` | every case passed, but a `cover` requirement was confidently missed |
 
 Up to `maxFailures` **distinct** bugs (different exception type or location) are reported separately, each shrunk on its own; shrinking never turns one bug into another.
 
@@ -170,12 +201,15 @@ Up to `maxFailures` **distinct** bugs (different exception type or location) are
 | Seed replay and crash breadcrumbs | ✅ (verified on Linux; macOS, Windows and JS pending in CI) |
 | Stateful / model-based testing: `stateMachine`, shortest failing sequence printed as `replayCommands` code | ✅ |
 | Object generators derived automatically (no `arbitrary` needed) | v0.4 |
-| `classify` / `cover`, health checks beyond filters, per-case deadline | v0.3 |
+| `classify` / `cover` / `label`, stateful statistics, verbosity levels | ✅ |
+| Edge-case bias, boundary hints (`near`, mined constants), swarm testing | ✅ |
+| Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
 | Failure database (replay past failures first), `unittest2` adapter, JSON report | v0.5 |
 
 ## Known limitations
 
-- **No per-case timeout yet**: a case that loops forever hangs the test. The seed is already in `.proptest/last-run` to replay it.
+- **A case that never returns hangs the test**: `deadline` catches slow cases, but stopping one that loops forever needs a watchdog thread (planned after 1.0). The seed is already in `.proptest/last-run` to replay it.
+- **Deep states are still rare**: a state that needs a long, specific path (five reopenings of a breaker in a row, each after the right wait) is seldom reached by random sequences. Write that path as a `replayCommands` test.
 - **`--panics:on`**: `Defect`s end the process at the first failing case, so it cannot be shrunk (a compile-time warning says so).
 - A broad `except CatchableError` inside the property body also catches the library's internal signals (`assume`, failed `check`); re-raise them or catch narrower types.
 - The values generated for a seed may change between versions before 1.0 (always listed in the [CHANGELOG](CHANGELOG.md)), so an old seed may not replay after an upgrade.
@@ -230,10 +264,10 @@ Time is a command (`command advance(ms in ints(0, 2000))` moving a fake clock), 
 
 ## Quality
 
-- 87 tests, passing on `orc`/`arc` × threads on/off × debug/release; ASan, UBSan and leak checks clean.
+- 107 tests, passing on `orc`/`arc` × threads on/off × debug/release; ASan, UBSan and leak checks clean.
 - The PRNG and hash match the authors' reference C implementations and the official FNV-1a vectors (golden tests).
 - Value tests: each reference bug of the [SPEC](docs/SPEC.md) shrinks to its exact minimal counterexample; two independent bugs are both reported, and shrinking never slips from one bug to another (checked on 20 seeds).
-- Deterministic gates in CI: shrinking each reference bug takes 17 to 205 executions (baseline in `benchmarks/baseline/shrink.json`); drawing choices and running stateful steps never allocate.
+- Deterministic gates in CI: shrinking each reference bug takes 9 to 214 executions (baseline in `benchmarks/baseline/shrink.json`); planted bugs must keep being found on as many seeds as the baseline (`benchmarks/baseline/find.json`); drawing choices and running stateful steps never allocate, and a test checks the same for static labels.
 - First external user: the [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) model test runs 1000 random sequences against its breaker.
 - Every requirement has a row in [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md), checked by `nimble trace`. Design decisions: [`docs/decisions/`](docs/decisions/README.md).
 

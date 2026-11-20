@@ -21,9 +21,9 @@
 ## `runProperty` gives the result object without raising (I3).
 
 import std/[macros, os]
-import proptest/[choices, gen, assertions, engine, report, stateful]
+import proptest/[choices, gen, assertions, engine, report, stateful, labels, mining]
 
-export choices, gen, assertions, engine, report, stateful
+export choices, gen, assertions, engine, report, stateful, labels
 
 when compileOption("panics"):
   {.warning: "proptest: compiled with --panics:on. Defects end the process at the " &
@@ -34,6 +34,12 @@ type
   PropertyError* = object of CatchableError
     ## Raised by `forAll` outside a unittest `test` when the property fails.
     propertyResult*: PropertyResult
+
+proc printNotes*(r: PropertyResult) =
+  ## Prints what a passing property has to say (statistics, warnings), by
+  ## verbosity (O2, O4).
+  let notes = formatNotes(r)
+  if notes.len > 0: echo notes
 
 proc raisePropertyError*(r: PropertyResult) {.noinline, noreturn.} =
   var e = newException(PropertyError, formatReport(r))
@@ -76,7 +82,16 @@ proc buildProperty(args: NimNode; resVar: NimNode): NimNode =
   if settingsExpr == nil:
     settingsExpr = newCall(bindSym"initSettings")
 
-  let checked = rewriteChecks(body, bindSym"propCheck")
+  var slot = 0
+  let checked = rewriteChecks(rewriteLabels(body, src, slot), bindSym"propCheck")
+  # Boundary hints (ADR-0012): the body's literals and constants first, then
+  # the literals of the whole file. Computed once per property.
+  let bodyAcc = genSym(nskVar, "bodyHints")
+  let mined = genSym(nskLet, "hints")
+  genLets.add bodyHints(body, bodyAcc)
+  let fileHints = genSym(nskLet, "fileHints")
+  genLets.add newLetStmt(mined, bodyAcc)
+  genLets.add newLetStmt(fileHints, prefix(minedHints(if args.len > 1: args[0] else: body), "@"))
   let settingsVar = genSym(nskVar, "settings")
   let prop = genSym(nskLet, "prop")
   result = quote do:
@@ -85,11 +100,12 @@ proc buildProperty(args: NimNode; resVar: NimNode): NimNode =
     if `settingsVar`.name.len == 0:
       `settingsVar`.name = `defaultName`
     let `prop`: PropertyProc = proc(`src`: ChoiceSource) =
-      `src`.phase = cpGenerate
+      useHints(`src`, `mined`, `fileHints`)
+      beginGenerate(`src`)
       `draws`
       if `src`.recordInputs:
         `records`
-      `src`.phase = cpBody
+      beginBody(`src`)
       `checked`
     let `resVar` = runProperty(`prop`, `settingsVar`)
 
@@ -102,7 +118,9 @@ macro forAll*(args: varargs[untyped]): untyped =
   result = quote do:
     block:
       `run`
-      if not `res`.passed:
+      if `res`.passed:
+        printNotes(`res`)
+      else:
         when declared(testStatusIMPL):
           checkpoint(formatReport(`res`))
           fail()
@@ -129,7 +147,9 @@ macro checkStateMachine*(machine: typed; settings: untyped = nil): untyped =
   result = quote do:
     block:
       let `res` = stateMachineResult(`machine`, `s`)
-      if not `res`.passed:
+      if `res`.passed:
+        printNotes(`res`)
+      else:
         when declared(testStatusIMPL):
           checkpoint(formatReport(`res`))
           fail()

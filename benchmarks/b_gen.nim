@@ -69,7 +69,7 @@ proc main() =
   let runner = stateMachineRunner(Counter)
   bench("M2 one sequence, 50 steps (2 commands)", ops div 10):
     src.startRandom(100)
-    runner(src, @[], false, 50)
+    runner(src, @[], false, 50, true)
     keep = src.choiceCount
   let stepRow = results[^1]
 

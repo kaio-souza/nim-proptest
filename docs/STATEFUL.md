@@ -77,8 +77,7 @@ stateMachine BreakerSpec:
     postcondition: result == (if model.admits: "failed" else: "rejected")
     update: model.called(ok = false)
 
-  # Any wait, plus the waits around the timeout: bugs live at boundaries.
-  command advance(ms in oneOf(ints(0, 2000), elements([openFor - 1, openFor, openFor + 1]))):
+  command advance(ms in ints(0, 2000)):
     run: clock.ms += ms
     update: model.now += ms
 
@@ -103,6 +102,8 @@ What each section does:
 
 Time is just another command (`advance`). Everything time-based becomes reproducible and shrinkable.
 
+A uniform wait in `0 .. 2000` would rarely be **exactly** 1000, which is where the bug of section 5 lives. Integer constants of the test file, here `const openFor = 1000`, are proposed as boundary hints (999, 1000, 1001) while exploring ([ADR-0012](decisions/0012-bug-finding-power.md)). When the boundary is defined in another module, name it: `ms in ints(0, 2000, near = [openFor])`.
+
 Arguments may depend on the model, for example `k in elements(model.keys)` to act on a key added earlier. Give such commands a precondition (`model.keys.len > 0`) so the source is never asked for an element of an empty list.
 
 ## 4. Running it
@@ -120,8 +121,9 @@ Each case is one random sequence of up to `maxSteps` commands (default 50; `init
 Build the example with `-d:plantBug`. That bug lets the probe through only *after* 1000 ms, not *at* 1000 ms:
 
 ```
-Property 'BreakerSpec' falsified after 499 passing cases (0 discarded).
-  Shortest failing sequence (5 steps, 12 choices, 130 shrink executions):
+Property 'BreakerSpec' falsified at case 91 (496 cases passed, 0 discarded).
+Failure 1 of 2 (PropertyFailed at stateful.nim:92)
+  Shortest failing sequence (5 steps, 12 choices, 171 shrink executions):
     replayCommands BreakerSpec:
       fail()
       fail()
@@ -133,10 +135,19 @@ Property 'BreakerSpec' falsified after 499 passing cases (0 discarded).
       if model.admits: "ok" else: "rejected" was "ok"
   Location: stateful.nim:92
   Failed at step 5: succeed()
+Failure 2 of 2 (PropertyFailed at stateful.nim:97)
+  Shortest failing sequence (5 steps, 12 choices, 191 shrink executions):
+    replayCommands BreakerSpec:
+      fail()
+      fail()
+      fail()
+      advance(1000)
+      fail()
+  ...
   Replay: PROPTEST_SEED=3 ./stateful
 ```
 
-The random sequence that first failed had dozens of steps. The report shows the shortest one: three failures to open the circuit, a wait of **exactly** the timeout, and the call that should have been let through. Any earlier step can be removed and the bug disappears; any wait other than 1000 does not show it.
+The random sequence that first failed (case 91) had dozens of steps. The report shows the shortest one: three failures to open the circuit, a wait of **exactly** the timeout, and the call that should have been let through. Any earlier step can be removed and the bug disappears; any wait other than 1000 does not show it. The same bug also breaks the `fail()` postcondition, which is a different check, so it is reported separately with its own shortest sequence.
 
 The `replayCommands` block is valid Nim. Paste it into a test and it runs the same steps, with the same setup, postconditions and invariants, as a permanent regression test:
 
@@ -171,13 +182,16 @@ Three steps are enough to see which rule is off. Decide which side matches the s
 ## 7. Tips
 
 - **Keep the model dumb.** A list instead of a ring buffer, a counter instead of a sliding window. If the model is as complex as the system, both can share the same bug.
-- **Generate boundaries on purpose.** A uniform wait in `0 .. 2000` hits exactly 1000 rarely. `oneOf(ints(0, 2000), elements([...]))` adds the values the specification cares about, and shrinking still works.
+- **Name the boundaries the file does not show.** Constants of the test file are mined automatically; for one defined elsewhere, use `ints(lo, hi, near = [...])`. Shrinking is unaffected.
+- **Check what was exercised.** With `PROPTEST_VERBOSITY=verbose` a passing machine prints how often each command ran, how often its precondition blocked it, and the sequence lengths. A command that never ran is always reported as a warning. `cover(20.0, model.state == Open, "reached Open")` inside an `update:` fails the test when fewer than 20% of sequences reach that state.
+- **Swarm testing is on.** Half of the sequences leave some commands out, so long runs of the others (many increments with no reset) become likely. `initSettings(swarm = false)` turns it off.
 - **Check what the user observes**: returned values in postconditions, visible state in invariants. Do not check private fields.
 - **Expected errors are values.** If the system raises on a rejected call, catch it inside `run:` and return something the model predicts (`"rejected"`). Any exception that escapes `run:` is a failure.
 - **A real example**: [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) tests its breaker this way (`tests/t_model.nim`), with backoff, `successThreshold` and its `FakeClock`, over 1000 sequences.
 
-## Limits (v0.2)
+## Limits (v0.3)
 
+- States that need a long, specific path (five reopenings of a breaker in a row, each after the right wait) are still rarely reached by random sequences. Write that path as a `replayCommands` regression test, or narrow the commands of a dedicated machine.
 - Commands run one after another on one thread. Parallel linearizability checks are planned after 1.0 (M7).
 - Argument values are printed with `showCode`, which produces Nim literals for built-in types. For a custom argument type, overload `showCode` so the printed block compiles.
 - `stateMachine` must be used at module level. The generated names (`BreakerSpec`, `BreakerSpecStep`, the command constructors) are exported, so a machine can live in its own module.

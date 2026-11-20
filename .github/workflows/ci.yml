@@ -38,29 +38,32 @@ jobs:
         run: nimble test -y --mm:${{ matrix.mm }} --threads:${{ matrix.threads }}
 
   sanitizers:
-    name: sanitizers (ASan + UBSan + leaks, ${{ matrix.mm }})
+    # One job per suite: a hang shows up as that suite's job, after minutes,
+    # instead of stopping the whole run (v0.2: the arc job hung for 25 min
+    # with no way to tell which suite, while every suite passes locally).
+    name: sanitizers (${{ matrix.mm }}, ${{ matrix.suite }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     container: nimlang/nim:2.2.4
     strategy:
       fail-fast: false
       matrix:
         mm: [orc, arc]
+        suite: [t_prng, t_choices, t_gen, t_shrink, t_engine, t_values, t_stateful, t_find]
     env:
       ASAN_OPTIONS: detect_leaks=1
       UBSAN_OPTIONS: print_stacktrace=1
     steps:
       - uses: actions/checkout@v4
-      - name: Test suites under sanitizers (Q6)
-        shell: bash
+      - name: Build under ASan + UBSan (Q6)
         run: |
-          set -e
-          for t in t_prng t_choices t_gen t_shrink t_engine t_values t_stateful; do
-            nim c -r --hints:off --mm:${{ matrix.mm }} -d:useMalloc --debugger:native \
-              --passC:-fsanitize=address,undefined --passC:-fno-sanitize-recover=undefined \
-              --passC:-fno-omit-frame-pointer --passL:-fsanitize=address,undefined \
-              -o:/tmp/$t tests/$t.nim
-          done
+          nim c --hints:off --mm:${{ matrix.mm }} -d:useMalloc --debugger:native \
+            --passC:-fsanitize=address,undefined --passC:-fno-sanitize-recover=undefined \
+            --passC:-fno-omit-frame-pointer --passL:-fsanitize=address,undefined \
+            -o:/tmp/${{ matrix.suite }} tests/${{ matrix.suite }}.nim
+      - name: Run under ASan + UBSan + LeakSanitizer (Q6)
+        # Fails after 5 minutes instead of waiting for the job timeout.
+        run: timeout --verbose --kill-after=30s 300s /tmp/${{ matrix.suite }}
 
   quality:
     name: examples, docs, traceability, performance gates
@@ -80,6 +83,8 @@ jobs:
           PROPTEST_DB=off /tmp/tour
           nim c --hints:off -o:/tmp/stateful examples/stateful.nim
           PROPTEST_DB=off /tmp/stateful
+          nim c --hints:off -o:/tmp/patterns examples/patterns.nim
+          PROPTEST_DB=off /tmp/patterns
           # quickstart has planted bugs: it must report them and fail.
           nim c --hints:off -o:/tmp/quickstart examples/quickstart.nim
           if PROPTEST_DB=off /tmp/quickstart; then
