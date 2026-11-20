@@ -6,7 +6,7 @@ Legend: [x] done (implemented and tested) · [ ] pending · [~] deferred
 
 ## Where we are
 
-**v0.3 implemented and tested (bug-finding power, coverage, budgets, health checks), CI green on GitHub, not yet in the Nimble index.** v0.2 is tagged. Next: v0.4. Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 72 done or partial, all with evidence).
+**v0.3 implemented and tested (bug-finding power, coverage, budgets, health checks), CI green on GitHub, not yet in the Nimble index.** v0.2 is tagged. Next: v0.4 (priorities below). Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 72 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
@@ -61,7 +61,7 @@ Measured on an Intel Core i5-10210U laptop (noisy: repeated runs vary by up to 2
 
 v0.3 costs (minimum of 400 runs, against v0.2 built from its tag): about 6 µs more per property and 15–25% more for collection-heavy cases. They come from health checks (input hashes, sampled generation timing), boundary hints on every integer draw (one more PRNG call, a hinted value in 1 draw of 4) and stateful statistics and swarm choices. Every target that was met is still met; the per-case budget has less room left.
 
-Missed targets go to v0.4 below. Already done to get here: inlined hot paths, a fixed choice buffer instead of `seq.add`, no 64-bit division in the exploration distribution, constant-time float scaling (from 149 ns to ~55 ns per float).
+Missed targets go to v0.6 below. Already done to get here: inlined hot paths, a fixed choice buffer instead of `seq.add`, no 64-bit division in the exploration distribution, constant-time float scaling (from 149 ns to ~55 ns per float).
 
 ## v0.2: stateful testing
 
@@ -111,25 +111,47 @@ What did **not** work, recorded for later: plain swarm (every sequence) lowered 
 
 Decided in ADR-0012: deadline off by default (`PROPTEST_DEADLINE` for CI); `cover` in state machines counts per sequence.
 
-## v0.4: richer generation
+## Priorities after v0.3: useful to more people
 
-- [ ] Object, case object and distinct derivation (G4)
-- [ ] Collections, refs, string alphabets, float options (G5, G6, G9)
-- [ ] `frequency`, `recursive`, `sized`, `unique` (C3–C6)
-- [ ] Generation speed: meet the `int` and debug-build targets above
-- [ ] Compile-time benchmark (PF9), with derived generators in it
-- [ ] Writing generators guide (DOC2)
+Reordered on 2026-11-20 by what keeps a new user from adopting the library, most blocking first:
 
-## v0.5: workflow
+1. **Their own types.** Most Nim data are `object`s; today each one needs a hand-written `arbitrary`. → v0.4
+2. **A bug found once stays found.** Today a failure is gone at the next random run unless its seed or replay block is copied by hand. → v0.4
+3. **Their platform and test runner.** Only Linux and `std/unittest` are tested; much of the ecosystem uses `unittest2`. → v0.5
+4. **Learning it alone.** How to write generators, every setting in one place, what to do when something looks wrong. → v0.4 and v0.5
+5. **Trust over time.** A written stability policy, then two quiet releases, before the Nimble index (criteria below). → v0.5, then the countdown
 
-- [ ] Failure database with versioned format and atomic writes, explicit examples (R3, R4, RL12)
-- [ ] Stability policy documented and enforced by golden tests (RL15)
-- [ ] JSON report for CI (O3)
+Generation changes (anything that alters the values of a seed) are grouped in one release, v0.6, so that the stability countdown is not restarted by each of them.
+
+## v0.4: their own types, and bugs that stay found
+
+- [ ] Object, case object and `distinct` derivation, with no code to write (G4); private fields of other modules handled or reported clearly
+- [ ] `ref` objects and recursive types with a depth bound; `recursive` and `frequency` for trees and weighted choices (G5, C4, C3)
+- [ ] `Table`, `OrderedTable`, `HashSet` (G5); string alphabets: alphanumeric, identifiers, valid UTF-8 (G6)
+- [ ] Failure database: past failures replayed first on the next run, versioned format, atomic writes (R3, RL12); explicit examples always run (R4)
+- [ ] Compile-time benchmark with derived generators (PF9): derivation must not make test files slow to build
+- [ ] Writing generators guide (DOC2), including derivation and when to write `arbitrary` by hand
+
+New API only: no change to the values of existing generators.
+
+## v0.5: their platform, their runner, and a stability policy
+
+- [ ] CI on macOS and Windows; Nim devel as an allowed failure (Q2)
+- [ ] `unittest2` adapter (I2)
+- [ ] JSON report for CI tools, `PROPTEST_REPORT` (O3, K2)
 - [ ] Configuration reference and troubleshooting guide (DOC5, DOC6)
-- [ ] Remaining environment variables (K2: `PROPTEST_DEADLINE`, `PROPTEST_VERBOSITY`, `PROPTEST_REPORT`)
-- [ ] `unittest2` module (I2)
-- [ ] CI on macOS and Windows, Nim devel (Q2)
-- [ ] Publish to the Nimble index
+- [ ] Stability policy written down: what may change between versions, enforced by golden tests (RL15). The countdown for the Nimble index starts here.
+
+## v0.6: generation changes, in one release
+
+- [ ] `sized`, `unique`, `sortedSeq` (C5, C6)
+- [ ] Generation speed: meet the `int` and debug-build targets above
+- [ ] Targeted exploration for deep states (the breaker's backoff cap, ADR-0012), if `b_find` shows a gain
+- [ ] Any change to the exploration distribution waiting since v0.3
+
+## Publication in the Nimble index
+
+- [~] **On hold** until stability is shown (decided 2026-11-20). Proposed criteria: two releases in a row after v0.6 with no breaking API change and no generation change; used in at least two more of the author's projects for a few weeks with no library bug found; CI green on Linux, macOS and Windows (Q2). Until then, install from GitHub.
 
 ## v1.0: acceptance criteria
 

@@ -200,11 +200,11 @@ Up to `maxFailures` **distinct** bugs (different exception type or location) are
 | `std/unittest` integration; standalone use | ✅ |
 | Seed replay and crash breadcrumbs | ✅ (verified on Linux; macOS, Windows and JS pending in CI) |
 | Stateful / model-based testing: `stateMachine`, shortest failing sequence printed as `replayCommands` code | ✅ |
-| Object generators derived automatically (no `arbitrary` needed) | v0.4 |
+| Object generators derived automatically (no `arbitrary` needed); failure database (replay past failures first) | v0.4 |
 | `classify` / `cover` / `label`, stateful statistics, verbosity levels | ✅ |
 | Edge-case bias, boundary hints (`near`, mined constants), swarm testing | ✅ |
 | Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
-| Failure database (replay past failures first), `unittest2` adapter, JSON report | v0.5 |
+| macOS and Windows CI, `unittest2` adapter, JSON report, stability policy | v0.5 |
 
 ## Known limitations
 
