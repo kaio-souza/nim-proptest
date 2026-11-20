@@ -2,7 +2,7 @@
 
 A **property-based testing library for the [Nim](https://nim-lang.org) programming language**, distributed as a Nimble package. State a rule, let the library generate the inputs, and get the **smallest** input that breaks it.
 
-> **Status: v0.3, usable, not yet in the Nimble index.** Properties over built-in and custom types and stateful (model-based) tests work today, with automatic shrinking, reproducible failures, coverage statistics and boundary-seeking exploration. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
+> **Status: v0.4, usable, not yet in the Nimble index.** Properties over built-in types and **your own objects with no generator code**, and stateful (model-based) tests, work today, with automatic shrinking, failures that are replayed first on the next run, coverage statistics and boundary-seeking exploration. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
 
 ## Installation
 
@@ -41,7 +41,7 @@ The second property is wrong, and the report shows the **minimal** counterexampl
   Replay: PROPTEST_SEED=17542877672211577899 ./quickstart
 ```
 
-Runnable versions: [`examples/quickstart.nim`](examples/quickstart.nim) (with planted bugs), [`examples/tour.nim`](examples/tour.nim) (every feature below), [`examples/patterns.nim`](examples/patterns.nim) (the patterns cookbook) and [`examples/stateful.nim`](examples/stateful.nim) (the stateful tutorial); compiled and run in CI.
+Runnable versions: [`examples/quickstart.nim`](examples/quickstart.nim) (with planted bugs), [`examples/tour.nim`](examples/tour.nim) (every feature below), [`examples/generators.nim`](examples/generators.nim) (the generators guide), [`examples/patterns.nim`](examples/patterns.nim) (the patterns cookbook) and [`examples/stateful.nim`](examples/stateful.nim) (the stateful tutorial); compiled and run in CI.
 
 ## Writing properties
 
@@ -82,6 +82,7 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 |---|---|---|
 | `cases` | 100 | Cases to run |
 | `maxSteps` | 50 | Stateful tests: commands per sequence |
+| `maxDepth` | 5 | Nesting of recursive data while exploring |
 | `maxShrinks` | 2000 | Execution budget for shrinking each failure |
 | `maxSize` | 100 | Size reached by the last case (bounds typical collection lengths) |
 | `maxDiscardRatio` | 10 | Give up after `cases × ratio` discarded cases |
@@ -103,16 +104,33 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 | `PROPTEST_SEED` | Replays a run (printed in every failure report) |
 | `PROPTEST_CASES` | Default `cases`, e.g. more in CI than locally |
 | `PROPTEST_MAX_SHRINKS` | Default `maxShrinks` |
-| `PROPTEST_DB` | Directory for local files (default `.proptest`), or `off` |
+| `PROPTEST_DB` | Directory for local files: run seed, failure database (default `.proptest`), or `off` |
 | `PROPTEST_DEADLINE` | Default `deadline` in ms (e.g. set it in CI) |
 | `PROPTEST_TIME_BUDGET` | Default `timeBudget` in ms |
 | `PROPTEST_VERBOSITY` | `quiet`, `normal`, `verbose` or `debug` |
 
 ## Generators
 
-### Built-in types
+### Types, including yours
 
-Integers of every width (including `range` types), `float`/`float32` (including NaN, infinities and -0.0), `bool`, `char`, `string` (printable ASCII), enums, `seq[T]`, `array[N, T]`, `set[T]`, `Option[T]` and tuples, nested in any way. Integers reach `low(T)` and `high(T)` often, because bugs live there.
+`x in T` generates any of these, nested in any way, with no code: integers of every width (including `range` types), `float`/`float32` (including NaN, infinities and -0.0), `bool`, `char`, `string`, enums, `seq`, `array`, `set`, `Option`, tuples, `Table`, `OrderedTable`, `HashSet`, and **your own types**:
+
+```nim
+type
+  Kind = enum circle, rect
+  Shape = object                  # fields need not be exported
+    name: string
+    case kind: Kind
+    of circle: r: int
+    of rect: w, h: int
+  Node = ref object               # recursive: bounded automatically
+    val: int
+    left, right: Node
+
+forAll(s in Shape, n in Node): ...
+```
+
+Objects, case objects, `distinct` and `ref` objects are derived field by field; a bug in one branch of a case object shrinks to that branch with the simplest fields, and a tree bug to the smallest tree. Integers reach `low(T)` and `high(T)` often, because bugs live there. Guide: [docs/GENERATORS.md](docs/GENERATORS.md).
 
 ### Combinators
 
@@ -124,6 +142,10 @@ Integers of every width (including `range` types), `float`/`float32` (including 
 | `chars(alphabet)` | characters of `alphabet` | its first character |
 | `strings(alphabet, minLen, maxLen)` | strings | shorter, first characters |
 | `seqs(g, minLen, maxLen)` | `seq` of values from `g` | shorter, simpler elements |
+| `tables(k, v, ...)`, `hashSets(g, ...)` | containers of generated values | fewer, simpler entries |
+| `alphanumeric`, `identifiers(maxLen)`, `unicodeStrings(minLen, maxLen)` | letters and digits, identifiers, valid UTF-8 over every plane | shorter, `a` |
+| `frequency([(w, g), ...])` | one generator, chosen by weight | the first entry |
+| `recursive(base, extend, maxDepth)` | trees: each level is `base` or one level deeper | `base` |
 | `optionals(g)` | `Option` | `none` |
 | `elements([a, b, c])` | one of the values | the first |
 | `oneOf(g1, g2, ...)` | a value from one generator | the first generator |
@@ -133,9 +155,9 @@ Integers of every width (including `range` types), `float`/`float32` (including 
 
 You never write a shrinker: every generator, including `map`, `filter` and `flatMap` chains, shrinks automatically, and shrunk values still satisfy the filter.
 
-### Your own types
+### When fields must agree: write `arbitrary`
 
-Overload `arbitrary`, and `forAll(m in Money)` works:
+Derivation fills each field independently. When fields must agree (a start before an end), overload `arbitrary`; it always wins over derivation:
 
 ```nim
 proc arbitrary(src: ChoiceSource; t: typedesc[Money]): Money =
@@ -187,7 +209,13 @@ The library's own bug-finding power is measured: [`benchmarks/b_find.nim`](bench
 
 Up to `maxFailures` **distinct** bugs (different exception type or location) are reported separately, each shrunk on its own; shrinking never turns one bug into another.
 
-**Reproducing**: every report prints `PROPTEST_SEED=<n>`; run the same binary with it to get the same cases and the same counterexample. The seed is also written to `.proptest/last-run` before the first case, so it survives a crash. Add `.proptest/` to your `.gitignore`.
+**Reproducing**: every report prints `PROPTEST_SEED=<n>`; run the same binary with it to get the same cases and the same counterexample. The seed is also written to `.proptest/last-run` before the first case, so it survives a crash.
+
+**Failures stay found**: each reproduced failure is saved in `.proptest/db/` and replayed **before any random case** on the next runs, so a fix is checked at once; an entry is forgotten after passing three runs in a row. `PROPTEST_DB=off` disables it. Add `.proptest/` to your `.gitignore` (CI may cache it). To pin a case for good, add `example(...)` (one value per variable, run first) or paste the `replayCommands` block of a stateful report into a test:
+
+```nim
+forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
+```
 
 ## What works today
 
@@ -200,7 +228,8 @@ Up to `maxFailures` **distinct** bugs (different exception type or location) are
 | `std/unittest` integration; standalone use | ✅ |
 | Seed replay and crash breadcrumbs | ✅ (verified on Linux; macOS, Windows and JS pending in CI) |
 | Stateful / model-based testing: `stateMachine`, shortest failing sequence printed as `replayCommands` code | ✅ |
-| Object generators derived automatically (no `arbitrary` needed); failure database (replay past failures first) | v0.4 |
+| Generators derived for objects, case objects, `distinct`, `ref` and recursive types; `Table`, `HashSet`; `frequency`, `recursive`; Unicode strings | ✅ |
+| Failure database (past failures replayed first), explicit `example(...)` | ✅ |
 | `classify` / `cover` / `label`, stateful statistics, verbosity levels | ✅ |
 | Edge-case bias, boundary hints (`near`, mined constants), swarm testing | ✅ |
 | Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
@@ -264,7 +293,7 @@ Time is a command (`command advance(ms in ints(0, 2000))` moving a fake clock), 
 
 ## Quality
 
-- 107 tests, passing on `orc`/`arc` × threads on/off × debug/release; ASan, UBSan and leak checks clean.
+- 136 tests, passing on `orc`/`arc` × threads on/off × debug/release; ASan, UBSan and leak checks clean.
 - The PRNG and hash match the authors' reference C implementations and the official FNV-1a vectors (golden tests).
 - Value tests: each reference bug of the [SPEC](docs/SPEC.md) shrinks to its exact minimal counterexample; two independent bugs are both reported, and shrinking never slips from one bug to another (checked on 20 seeds).
 - Deterministic gates in CI: shrinking each reference bug takes 9 to 214 executions (baseline in `benchmarks/baseline/shrink.json`); planted bugs must keep being found on as many seeds as the baseline (`benchmarks/baseline/find.json`); drawing choices and running stateful steps never allocate, and a test checks the same for static labels.

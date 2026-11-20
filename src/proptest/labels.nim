@@ -47,6 +47,8 @@ proc rewriteLabels*(n, src: NimNode; nextSlot: var int): NimNode =
       return
     if callee.eqIdent("label") and n.len == 2:
       return newCall(bindSym"recordDynamic", src, rewriteLabels(n[1], src, nextSlot))
-  result = n
-  for i in 0 ..< n.len:
-    result[i] = rewriteLabels(n[i], src, nextSlot)
+  # A new tree, never `n` itself: callers rewrite the same body more than
+  # once (examples) and read the original afterwards (database key, hints).
+  result = copyNimNode(n)
+  for c in n:
+    result.add rewriteLabels(c, src, nextSlot)

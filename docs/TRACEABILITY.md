@@ -13,16 +13,16 @@ Rules of the check:
 | G1 | `Gen[T]` over a choice source | done | t_choices | n/a | |
 | G2 | Built-in generators | done | t_choices, t_gen | b_gen | integers incl. `range`, floats, bool, char, string, enum, seq, array, set, Option, tuple |
 | G3 | Generators inferred from types | done | t_gen | b_gen | `x in T`, user `arbitrary` overloads |
-| G4 | Object and distinct derivation | pending | | | v0.4 |
-| G5 | Tables, sets, refs | pending | | | v0.4 |
-| G6 | String alphabets | partial | t_gen | n/a | custom alphabets; alphanumeric and UTF-8 in v0.4 |
+| G4 | Object and distinct derivation | done | t_derive | b_compile | objects (private fields), case objects, `distinct`, `ref`; ADR-0013 |
+| G5 | Tables, sets, refs | done | t_derive | n/a | `Table`, `OrderedTable`, `HashSet`, `ref` and recursive types bounded by `maxDepth` |
+| G6 | String alphabets | done | t_gen, t_derive | n/a | custom, `alphanumeric`, `identifiers`, `unicodeStrings` (valid UTF-8) |
 | G7 | Size control | done | t_choices | n/a | |
 | G8 | Edge-case bias | done | t_choices, t_gen, t_values, t_find | b_find | limits, special floats, empty and single collections (`edgeBias`); boundary hints: `near`, mined constants (ADR-0012) |
 | G9 | Float options and ranges | done | t_choices, t_gen | n/a | |
 | C1 | `map`, `filter`, `flatMap` | done | t_gen, t_engine, t_values | n/a | |
 | C2 | `oneOf`, `elements`, `constant` | done | t_gen | n/a | |
-| C3 | `frequency` | pending | | | v0.4 |
-| C4 | `recursive` | pending | | | v0.4 |
+| C3 | `frequency` | done | t_derive | n/a | |
+| C4 | `recursive` | done | t_derive | n/a | |
 | C5 | `sized`, `resize` | pending | | | v0.6 |
 | C6 | `unique`, `sortedSeq` | pending | | | v0.6 |
 | C7 | Custom generators as procs | done | t_gen | n/a | `newGen`, `arbitrary` overloads |
@@ -33,8 +33,8 @@ Rules of the check:
 | S5 | Shrink quality targets | done | t_values | b_shrink | integers to the exact boundary, shortest strings and lists |
 | R1 | Seed and replay command on failure | done | t_engine, t_integration | n/a | |
 | R2 | `PROPTEST_SEED` | done | t_integration | n/a | |
-| R3 | Failure database | pending | | | v0.4 |
-| R4 | Explicit examples | pending | | | v0.4 |
+| R3 | Failure database | done | t_database | n/a | ADR-0014; key from the property's code |
+| R4 | Explicit examples | done | t_database | n/a | `example(...)` in `forAll` |
 | R5 | No global state between properties | done | t_prng, t_engine | n/a | |
 | A1 | `forAll(x in source)` | done | t_engine, t_integration | b_gen | ADR-0010 |
 | A2 | `assume` | done | t_choices, t_engine | n/a | |
@@ -76,7 +76,7 @@ Rules of the check:
 | RL9 | Crash breadcrumbs | done | t_integration | n/a | |
 | RL10 | Watchdog | deferred | | | |
 | RL11 | Health checks | done | t_engine, t_find | n/a | filter, data too large, few distinct inputs, slow generation; `suppress` |
-| RL12 | Failure database robustness | pending | | | with R3 |
+| RL12 | Failure database robustness | done | t_database | n/a | versioned format, atomic writes, entries that no longer fit dropped |
 | RL13 | Isolation in stateful tests | done | t_stateful | n/a | fresh model and setup per sequence; teardown after failures |
 | RL14 | Shrinker invariants | done | t_shrink | n/a | |
 | RL15 | Stability policy | partial | t_gen | n/a | golden snapshot; written policy in v0.5 |
@@ -88,7 +88,7 @@ Rules of the check:
 | PF6 | Efficient shrinking | done | t_shrink | b_shrink | binary search, tried-sequence cache, merge pass |
 | PF7 | Deterministic performance gates | done | bench | b_shrink, b_gen | executions and allocations |
 | PF8 | Time budget per property | done | t_find | n/a | `timeBudget`, `PROPTEST_TIME_BUDGET` |
-| PF9 | Compile-time benchmark | pending | | | v0.4 |
+| PF9 | Compile-time benchmark | done | bench | b_compile | 50 properties over derived types: same compile time as over `int` (~3.5 s) |
 | PF10 | Lazy formatting | done | t_find | n/a | inputs formatted only for the final report; static labels do not allocate per case |
 | Q1 | orc/arc × threads, no warnings | done | CI | n/a | also release/debug |
 | Q2 | macOS, Windows, devel | pending | | | v0.5 |
@@ -99,7 +99,7 @@ Rules of the check:
 | Q7 | Golden tests | done | t_prng, t_gen | n/a | |
 | Q8 | Examples compiled in CI | done | CI | n/a | |
 | DOC1 | README quickstart | done | doc | n/a | README snippets live in `examples/quickstart.nim` and `examples/tour.nim`, built and run in CI |
-| DOC2 | Writing generators guide | pending | | | v0.4 |
+| DOC2 | Writing generators guide | done | doc | n/a | [`GENERATORS.md`](GENERATORS.md); its example `examples/generators.nim` runs in CI |
 | DOC3 | Property patterns cookbook | done | doc | n/a | [`PATTERNS.md`](PATTERNS.md); its example `examples/patterns.nim` runs in CI |
 | DOC4 | Stateful testing tutorial | done | doc | n/a | [`STATEFUL.md`](STATEFUL.md); its example `examples/stateful.nim` runs in CI |
 | DOC5 | Configuration reference | pending | | | v0.5 |

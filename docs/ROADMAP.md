@@ -6,11 +6,11 @@ Legend: [x] done (implemented and tested) · [ ] pending · [~] deferred
 
 ## Where we are
 
-**v0.3 implemented and tested (bug-finding power, coverage, budgets, health checks), CI green on GitHub, not yet in the Nimble index.** v0.2 is tagged. Next: v0.4 (priorities below). Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 72 done or partial, all with evidence).
+**v0.4 implemented and tested (derived generators, failure database, examples), not yet in the Nimble index.** v0.3 is green on GitHub CI; v0.4 is checked locally on the full matrix. Next: v0.5 (priorities below). Status per requirement: [`TRACEABILITY.md`](TRACEABILITY.md) (95 requirements, 81 done or partial, all with evidence).
 
 | Evidence | Result |
 |---|---|
-| Tests | 107, all passing on orc/arc × threads on/off × debug/release |
+| Tests | 136, all passing on orc/arc × threads on/off × debug/release |
 | Sanitizers | ASan, UBSan and leak checks clean on orc and arc |
 | Golden tests | PRNG and hash match the authors' reference C code and the official FNV-1a vectors; generated values pinned for seed 42 |
 | Value tests | the reference bugs of SPEC Part IV shrink to their exact minima, including the stateful queue (4 steps, 20/20 seeds); multiple bugs and no slippage verified on 20 seeds each (100/100 on 100 seeds) |
@@ -125,14 +125,16 @@ Generation changes (anything that alters the values of a seed) are grouped in on
 
 ## v0.4: their own types, and bugs that stay found
 
-- [ ] Object, case object and `distinct` derivation, with no code to write (G4); private fields of other modules handled or reported clearly
-- [ ] `ref` objects and recursive types with a depth bound; `recursive` and `frequency` for trees and weighted choices (G5, C4, C3)
-- [ ] `Table`, `OrderedTable`, `HashSet` (G5); string alphabets: alphanumeric, identifiers, valid UTF-8 (G6)
-- [ ] Failure database: past failures replayed first on the next run, versioned format, atomic writes (R3, RL12); explicit examples always run (R4)
-- [ ] Compile-time benchmark with derived generators (PF9): derivation must not make test files slow to build
-- [ ] Writing generators guide (DOC2), including derivation and when to write `arbitrary` by hand
+- [x] Object, case object and `distinct` derivation, with no code to write (G4); private fields of other modules included (ADR-0013)
+- [x] `ref` objects and recursive types with a depth bound; `recursive` and `frequency` for trees and weighted choices (G5, C4, C3)
+- [x] `Table`, `OrderedTable`, `HashSet` (G5); string alphabets: alphanumeric, identifiers, valid UTF-8 (G6)
+- [x] Failure database: past failures replayed first on the next run, versioned format, atomic writes (R3, RL12); explicit examples always run (R4) (ADR-0014)
+- [x] Compile-time benchmark with derived generators (PF9): 50 properties over derived types build as fast as over `int` (~3.5 s)
+- [x] Writing generators guide (DOC2), `examples/generators.nim` in CI
 
-New API only: no change to the values of existing generators.
+New API only: no change to the values of existing generators (the shrink and detection baselines are identical, number for number). One narrow exception, a fix: boundary hints no longer pick up internal label slot numbers, which changes the values only of properties with three or more `classify`/`cover`/`label` calls (CHANGELOG).
+
+Found while building it: case objects whose discriminant is a `range` type cannot be derived with Nim 2.2.4 (assigning it crashes the compiler, and it has no address): a clear compile error says to use an enum or write `arbitrary`. The failure database is off by default in the library's own tests and benchmarks (`-d:proptestDb=off`), which need repeatable runs.
 
 ## v0.5: their platform, their runner, and a stability policy
 

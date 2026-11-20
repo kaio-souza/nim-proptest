@@ -20,8 +20,8 @@
 ## and prints one report. Outside a test, `forAll` raises `PropertyError`.
 ## `runProperty` gives the result object without raising (I3).
 
-import std/[macros, os]
-import proptest/[choices, gen, assertions, engine, report, stateful, labels, mining]
+import std/[macros, os, strutils]
+import proptest/[choices, gen, assertions, engine, report, stateful, labels, mining, prng]
 
 export choices, gen, assertions, engine, report, stateful, labels
 
@@ -60,6 +60,8 @@ proc buildProperty(args: NimNode; resVar: NimNode): NimNode =
   var draws = newStmtList()
   var records = newStmtList()
   var settingsExpr: NimNode = nil
+  var vars: seq[(NimNode, NimNode)]        # (name, hoisted source)
+  var examples: seq[NimNode]
 
   proc declare(name, value: NimNode): NimNode =
     nnkLetSection.newTree(newIdentDefs(
@@ -69,12 +71,15 @@ proc buildProperty(args: NimNode; resVar: NimNode): NimNode =
     let a = args[i]
     if a.kind == nnkInfix and a[0].eqIdent("in") and a[1].kind == nnkIdent:
       let g = genSym(nskLet, "source")
+      vars.add (a[1], g)
       genLets.add newLetStmt(g, newCall(ident"hoist", a[2]))
       draws.add declare(a[1], newCall(ident"drawFrom", src, g))
       records.add newCall(newDotExpr(newDotExpr(src, ident"inputs"), ident"add"),
         nnkTupleConstr.newTree(newLit($a[1]), newCall(bindSym"show", a[1])))
     elif a.kind in {nnkExprColonExpr, nnkExprEqExpr}:
       error("declare variables as `name in Type` or `name in generator`", a)
+    elif a.kind in {nnkCall, nnkCommand} and a.len >= 1 and a[0].eqIdent("example"):
+      examples.add a
     else:
       if settingsExpr != nil:
         error("forAll accepts a single Settings expression", a)
@@ -94,11 +99,50 @@ proc buildProperty(args: NimNode; resVar: NimNode): NimNode =
   genLets.add newLetStmt(fileHints, prefix(minedHints(if args.len > 1: args[0] else: body), "@"))
   let settingsVar = genSym(nskVar, "settings")
   let prop = genSym(nskLet, "prop")
+  # Failure database key (ADR-0014): the file and a hash of the code, so
+  # moving lines keeps the entries and changing the property drops them.
+  # Only the variables and the body: settings (a seed, a case count) and
+  # examples do not change what the property is.
+  var code = body.repr
+  for (name, g) in vars: code.add $name
+  for i in 0 ..< args.len - 1:
+    if args[i].kind == nnkInfix and args[i][0].eqIdent("in"): code.add args[i].repr
+  let codeKey = newLit(extractFilename(info.filename) & "#" & toHex(fnv1a64(code)))
+  let dbKey = genSym(nskLet, "dbKey")
+  # Explicit examples (R4): one value per variable, run before random cases.
+  let exampleList = genSym(nskVar, "examples")
+  var exampleProcs = newStmtList()
+  for ex in examples:
+    if ex.len - 1 != vars.len:
+      error("example(...) needs one value per variable (" & $vars.len & ")", ex)
+    # A fresh parameter symbol per generated proc: reusing one gensym'd
+    # parameter in several procs crashes the compiler.
+    let exSrc = genSym(nskParam, "src")
+    var binds = newStmtList()
+    var recs = newStmtList()
+    for i, (name, g) in vars:
+      binds.add nnkLetSection.newTree(newIdentDefs(
+        nnkPragmaExpr.newTree(name, nnkPragma.newTree(ident"used")),
+        newCall(ident"typeof", newCall(ident"drawFrom", exSrc, g)), ex[i + 1]))
+      recs.add newCall(newDotExpr(newDotExpr(exSrc, ident"inputs"), ident"add"),
+        nnkTupleConstr.newTree(newLit($name), newCall(bindSym"show", name)))
+    var exSlot = 0
+    let exBody = rewriteChecks(rewriteLabels(body.copyNimTree, exSrc, exSlot), bindSym"propCheck")
+    exampleProcs.add quote do:
+      `exampleList`.add proc(`exSrc`: ChoiceSource) =
+        beginBody(`exSrc`)
+        `binds`
+        if `exSrc`.recordInputs:
+          `recs`
+        `exBody`
   result = quote do:
     `genLets`
     var `settingsVar` = `settingsExpr`
+    let `dbKey` = if `settingsVar`.name.len > 0: `settingsVar`.name else: `codeKey`
     if `settingsVar`.name.len == 0:
       `settingsVar`.name = `defaultName`
+    var `exampleList`: seq[PropertyProc]
+    `exampleProcs`
     let `prop`: PropertyProc = proc(`src`: ChoiceSource) =
       useHints(`src`, `mined`, `fileHints`)
       beginGenerate(`src`)
@@ -107,7 +151,7 @@ proc buildProperty(args: NimNode; resVar: NimNode): NimNode =
         `records`
       beginBody(`src`)
       `checked`
-    let `resVar` = runProperty(`prop`, `settingsVar`)
+    let `resVar` = runProperty(`prop`, `settingsVar`, `dbKey`, `exampleList`)
 
 macro forAll*(args: varargs[untyped]): untyped =
   ## Runs the body for many generated cases; see the module documentation.

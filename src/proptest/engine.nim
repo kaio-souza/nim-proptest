@@ -31,6 +31,7 @@ type
     timeBudget*: int       ## Exploration time budget in ms; 0 = none (PF8).
     shrinkTimeBudget*: int ## Shrinking time budget per failure in ms; 0 = none (S4).
     suppress*: set[HealthCheck] ## Health checks not to run (RL11).
+    maxDepth*: int         ## Nesting depth of recursive data while exploring (ADR-0013).
     seed*: uint64          ## Run seed; 0 uses `PROPTEST_SEED` or a random one.
 
   HealthCheck* = enum
@@ -47,8 +48,14 @@ type
     psGeneratorError  ## A generator raised (RL6).
     psInsufficientCoverage  ## Every case passed, but a `cover` requirement was not met (D2).
 
+  FailureSource* = enum
+    fsExplored   ## Found by random exploration.
+    fsDatabase   ## Replayed from the failure database (R3).
+    fsExample    ## An explicit `example(...)` (R4).
+
   Failure* = object
     signature*: Signature
+    source*: FailureSource
     choices*: seq[uint64]      ## Minimal choice sequence.
     message*: string
     stackTrace*: string
@@ -59,6 +66,7 @@ type
     shrinkStopped*: bool       ## Shrinking hit its time budget: best counterexample so far (S4).
     flaky*: bool
     spans: seq[Span]
+    exampleIndex: int
 
   PropertyResult* = object
     name*: string
@@ -119,6 +127,7 @@ proc initSettings*(name = "";
                    timeBudget = envInt("PROPTEST_TIME_BUDGET", 0);
                    shrinkTimeBudget = 0;
                    suppress: set[HealthCheck] = {};
+                   maxDepth = defaultMaxDepth;
                    seed = 0'u64): Settings =
   ## Defaults can be changed globally with environment variables (K2):
   ## `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_SEED`.
@@ -127,7 +136,8 @@ proc initSettings*(name = "";
            maxSteps: maxSteps, verbosity: verbosity, swarm: swarm,
            edgeBias: edgeBias, mineConstants: mineConstants,
            deadline: deadline, timeBudget: timeBudget,
-           shrinkTimeBudget: shrinkTimeBudget, suppress: suppress, seed: seed)
+           shrinkTimeBudget: shrinkTimeBudget, suppress: suppress, maxDepth: maxDepth,
+           seed: seed)
 
 proc validate*(s: Settings) =
   ## Raises `ValueError` describing the first invalid setting (K3).
@@ -142,6 +152,7 @@ proc validate*(s: Settings) =
   req s.maxSteps >= 1, "maxSteps must be >= 1"
   req s.edgeBias >= 0.0 and s.edgeBias <= 1.0, "edgeBias must be in 0.0 .. 1.0"
   req s.deadline >= 0, "deadline must be >= 0 (ms; 0 disables it)"
+  req s.maxDepth >= 0, "maxDepth must be >= 0"
   req s.timeBudget >= 0, "timeBudget must be >= 0 (ms; 0 means none)"
   req s.shrinkTimeBudget >= 0, "shrinkTimeBudget must be >= 0 (ms; 0 means none)"
 
@@ -233,9 +244,12 @@ proc sizeFor(s: Settings; caseIndex: int): int {.inline.} =
 
 # -------------------------------------------------------------------- engine
 
-proc runProperty*(prop: PropertyProc; settings: Settings): PropertyResult =
+proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
+                  examples: seq[PropertyProc] = @[]): PropertyResult =
   ## Runs a property and returns its result. Never raises for failures of the
-  ## property itself; raises `ValueError` for invalid settings.
+  ## property itself; raises `ValueError` for invalid settings. Explicit
+  ## `examples` run first (R4), then the failures saved under `dbKey` in the
+  ## failure database (R3, ADR-0014), then random cases.
   validate(settings)
   let rs = if settings.seed != 0: settings.seed else: runSeed()
   writeBreadcrumb(rs)
@@ -243,6 +257,7 @@ proc runProperty*(prop: PropertyProc; settings: Settings): PropertyResult =
   let src = newChoiceSource(deriveSeed(rs, settings.name), settings.maxChoices,
                             settings.edgeBias)
   if not settings.mineConstants: src.useHints([])   # locks the hints empty
+  src.maxDepth = settings.maxDepth
   let maxDiscards = settings.cases * settings.maxDiscardRatio
   let verbose = settings.verbosity >= vVerbose
   # RL8: 1.25 x the deadline while exploring, so a case just over it does not
@@ -251,12 +266,54 @@ proc runProperty*(prop: PropertyProc; settings: Settings): PropertyResult =
   let exploreLimit = deadlineNs + deadlineNs div 4
   let started = getMonoTime()
   let budgetNs = int64(settings.timeBudget) * 1_000_000
+  var failingCases = 0
+  var caseNumber = 0
+
+  # 0. Explicit examples, then saved failures, before any random case.
+  var kept: seq[DbEntry]          # saved entries still worth keeping
+  defer:
+    # Save what failed (reproduced) and what is still being re-checked.
+    if dbKey.len > 0:
+      var entries = kept
+      if result.status == psFailed:
+        for f in result.failures:
+          if f.source != fsExample and not f.flaky:
+            var dup = false
+            for e in entries:
+              if e.choices == f.choices: dup = true
+            if not dup: entries.add DbEntry(passes: 0, choices: f.choices)
+      saveEntries(dbKey, entries)
+  template noteFailure(r: CaseResult; how: FailureSource; index = -1) =
+    inc failingCases
+    if result.firstFailureAt == 0: result.firstFailureAt = caseNumber
+    var known = false
+    for f in result.failures:
+      if f.signature == r.signature: known = true
+    if not known:
+      result.failures.add Failure(signature: r.signature, choices: src.choices,
+                                  message: r.message, spans: src.spans,
+                                  source: how, exampleIndex: index)
+  for i, ex in examples:
+    src.startReplay([], settings.maxSize)
+    inc caseNumber
+    let r = execute(ex, src, deadlineNs, settings.name)
+    if r.outcome == ocFail: noteFailure(r, fsExample, i)
+  for e in loadEntries(dbKey):
+    src.startReplay(e.choices, settings.maxSize)
+    inc caseNumber
+    let r = execute(prop, src, deadlineNs, settings.name)
+    case r.outcome
+    of ocFail:
+      noteFailure(r, fsDatabase)
+    of ocPass:
+      if e.passes + 1 < dbPassesToForget:
+        kept.add DbEntry(passes: e.passes + 1, choices: e.choices)
+    of ocDiscard, ocOverrun, ocGenError:
+      discard              # no longer fits the generators: forgotten (RL12)
 
   # 1. Explore `cases` cases (passing or failing), unless too many are
   #    discarded. After a failure, exploration goes on to look for other
   #    distinct bugs (RL5) and stops once `maxFailures` are known.
-  var failingCases = 0
-  var caseNumber = 0
   # Health checks (RL11): distinct inputs, and generation time on 1 case in 8.
   # Up to 64 distinct input hashes in a fixed array: no allocation, and
   # "few distinct inputs" only matters below that.
@@ -312,14 +369,7 @@ proc runProperty*(prop: PropertyProc; settings: Settings): PropertyResult =
       result.message = "a generator raised: " & r.message
       return
     of ocFail:
-      inc failingCases
-      if result.firstFailureAt == 0: result.firstFailureAt = caseNumber
-      var known = false
-      for f in result.failures:
-        if f.signature == r.signature: known = true
-      if not known:
-        result.failures.add Failure(signature: r.signature, choices: src.choices,
-                                    message: r.message, spans: src.spans)
+      noteFailure(r, fsExplored)
   let explored = result.casesRun + failingCases
   if hcLargeData notin settings.suppress and result.overruns * 10 > explored + result.discarded and
      result.overruns > 0:
@@ -383,10 +433,11 @@ proc runProperty*(prop: PropertyProc; settings: Settings): PropertyResult =
   var anyReal = false
   for f in result.failures.mitems:
     var reproduced = true
+    let run = if f.source == fsExample: examples[f.exampleIndex] else: prop
     for attempt in 0 .. 1:
       src.startReplay(f.choices, settings.maxSize)
       src.recordInputs = attempt == 1
-      let r = execute(prop, src, deadlineNs, settings.name)
+      let r = execute(run, src, deadlineNs, settings.name)
       if r.outcome == ocFail and r.signature == f.signature:
         if attempt == 1:
           f.message = r.message

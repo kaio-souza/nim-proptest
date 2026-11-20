@@ -14,8 +14,8 @@
 ## dynamic dispatch, and argument generators that do not read the model or
 ## the system are built once per property, not per step.
 
-import std/macros
-import choices, gen, assertions, engine, labels, mining
+import std/[macros, os, strutils]
+import choices, gen, assertions, engine, labels, mining, prng
 
 type
   StateRunner*[S] = proc(src: ChoiceSource; steps: seq[S]; replay: bool;
@@ -28,16 +28,17 @@ proc raisePrecondition*(index: int; step: string) {.noinline.} =
     " (" & step & ") is false, so this sequence cannot happen")
 
 proc runStateMachine*[S](runner: StateRunner[S]; settings: Settings;
-                         machine: string): PropertyResult =
+                         machine: string; dbKey = ""): PropertyResult =
   ## Runs random command sequences with the engine of `forAll`.
   var s = settings
+  let key = if s.name.len > 0: s.name else: dbKey
   if s.name.len == 0: s.name = machine
   let maxSteps = s.maxSteps
   let swarm = s.swarm
   let noSteps: seq[S] = @[]
   let prop: PropertyProc = proc(src: ChoiceSource) =
     runner(src, noSteps, false, maxSteps, swarm)
-  result = runProperty(prop, s)
+  result = runProperty(prop, s, key)
   # Commands that never ran: the model was never exercised there (O4).
   for st in result.labels:
     if st.kind == lkCommand and st.cases == 0 and result.labeledCases > 0:
@@ -248,6 +249,13 @@ macro stateMachine*(name, body: untyped): untyped =
       params.add newIdentDefs(a.name, argTypes[ci][i])
       ctor.add newColonExpr(field(cmd, i), a.name)
     result.add newProc(postfix(cmd.name, "*"), params, newStmtList(ctor))
+
+  # Failure database key (ADR-0014): machine name, file and a hash of its code.
+  let keyLit = newLit(mName & "@" & extractFilename(name.lineInfoObj.filename) & "#" &
+                      toHex(fnv1a64(body.repr)))
+  result.add newProc(postfix(ident"stateMachineKey", "*"),
+    [ident"string", newIdentDefs(ident"_", nnkBracketExpr.newTree(ident"typedesc", m.name))],
+    newStmtList(keyLit))
 
   # `$` of a step as a Nim call: push(3)
   let stepVar = ident"step"
@@ -466,5 +474,5 @@ macro replayCommands*(machine, body: untyped): untyped =
 template stateMachineResult*(machine: typedesc; settings: Settings = initSettings()): PropertyResult =
   ## Runs random command sequences and returns the `PropertyResult` without
   ## raising (I3). The property name defaults to the machine name.
-  mixin stateMachineRunner
-  runStateMachine(stateMachineRunner(machine), settings, $machine)
+  mixin stateMachineRunner, stateMachineKey
+  runStateMachine(stateMachineRunner(machine), settings, $machine, stateMachineKey(machine))

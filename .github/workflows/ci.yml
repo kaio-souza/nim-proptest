@@ -46,7 +46,7 @@ jobs:
       fail-fast: false
       matrix:
         mm: [orc, arc]
-        suite: [t_prng, t_choices, t_gen, t_shrink, t_engine, t_values, t_stateful, t_find]
+        suite: [t_prng, t_choices, t_gen, t_shrink, t_engine, t_values, t_stateful, t_find, t_derive, t_database]
     steps:
       - uses: actions/checkout@v4
 
@@ -91,6 +91,8 @@ jobs:
           PROPTEST_DB=off /tmp/stateful
           nim c --hints:off -o:/tmp/patterns examples/patterns.nim
           PROPTEST_DB=off /tmp/patterns
+          nim c --hints:off -o:/tmp/generators examples/generators.nim
+          PROPTEST_DB=off /tmp/generators
           # quickstart has planted bugs: it must report them and fail.
           nim c --hints:off -o:/tmp/quickstart examples/quickstart.nim
           if PROPTEST_DB=off /tmp/quickstart; then

@@ -1,6 +1,6 @@
 # ADR-0003: Seeds for replay and a local failure database
 
-- Status: Proposed
+- Status: Accepted (details of the failure database: ADR-0014)
 - Date: 2026-11-19
 - Requirements: R1–R5, K2, M4
 

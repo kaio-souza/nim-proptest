@@ -17,6 +17,10 @@ proc replayLine(r: PropertyResult): string =
 proc formatFailure(f: Failure; n, total: int): string =
   if total > 1:
     result.add "Failure " & $n & " of " & $total & " (" & $f.signature & ")\n"
+  case f.source
+  of fsDatabase: result.add "  Replayed from the failure database: it failed in an earlier run.\n"
+  of fsExample: result.add "  An explicit example (not shrunk).\n"
+  of fsExplored: discard
   if f.flaky:
     result.add "  FLAKY: the minimal case did not fail again when re-run.\n" &
       "  Common causes: time, randomness, global state, threads or I/O in the property.\n"

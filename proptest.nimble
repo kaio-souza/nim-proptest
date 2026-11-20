@@ -1,12 +1,12 @@
 # Package
 
-version       = "0.3.0"
+version       = "0.4.0"
 author        = "Kaio Souza"
 description   = "Property-based testing for Nim: generators from types, integrated shrinking and stateful testing, with reproducible failures."
 license       = "MIT"
 srcDir        = "src"
 skipDirs      = @["tests", "benchmarks", "examples", "docs", "scripts"]
-# 0.3.0 is unreleased: see CHANGELOG.md and docs/ROADMAP.md.
+# 0.4.0 is unreleased: see CHANGELOG.md and docs/ROADMAP.md.
 
 # Dependencies (ADR-0002: standard library only)
 
@@ -14,13 +14,14 @@ requires "nim >= 2.2.4"
 
 # Tasks (`nimble test` runs every tests/t_*.nim)
 
-const benchFlags = "nim c -r --hints:off --warnings:off -d:release --opt:speed "
+const benchFlags = "nim c -r --hints:off --warnings:off -d:release --opt:speed -d:proptestDb=off "
 
 task bench, "Run the benchmarks (timings are informational)":
   exec benchFlags & "--mm:orc benchmarks/b_gen.nim"
   exec benchFlags & "--mm:arc -d:nimAllocStats benchmarks/b_gen.nim"
   exec benchFlags & "benchmarks/b_shrink.nim"
   exec benchFlags & "benchmarks/b_find.nim"
+  exec "nim c -r --hints:off --warnings:off benchmarks/b_compile.nim --check"
 
 task gate, "Deterministic gates: shrink executions, allocations, bug detection (ADR-0008, ADR-0012)":
   exec benchFlags & "benchmarks/b_shrink.nim --check"

@@ -6,7 +6,7 @@ Each file records one decision: its context, what was decided, the consequences,
 |---|---|---|
 | [0001](0001-integrated-shrinking-on-choice-sequences.md) | Integrated shrinking over a recorded choice sequence | Proposed |
 | [0002](0002-zero-dependencies-runner-agnostic.md) | Zero dependencies; runner-agnostic core with adapters | Proposed |
-| [0003](0003-reproducibility-and-failure-database.md) | Seeds for replay and a local failure database | Proposed |
+| [0003](0003-reproducibility-and-failure-database.md) | Seeds for replay and a local failure database (details: ADR-0014) | Accepted |
 | [0004](0004-evidence-policy.md) | No feature without tests, value tests and benchmarks | Accepted |
 | [0005](0005-own-prng-and-stable-hashing.md) | Own versioned PRNG and stable hashing, checked by golden tests | Proposed |
 | [0006](0006-failure-identity-and-flaky-detection.md) | Failure signatures, no slippage, flaky detection, multiple failures | Proposed |
@@ -16,6 +16,8 @@ Each file records one decision: its context, what was decided, the consequences,
 | [0010](0010-forall-in-syntax.md) | `forAll(x in source)`: one form for types and generators | Accepted |
 | [0011](0011-stateful-testing.md) | Stateful testing: `stateMachine` macro over the choice sequence, steps as spans | Accepted |
 | [0012](0012-bug-finding-power.md) | Bug-finding power: detection-rate benchmark, coverage, boundary hints, swarm testing, deadlines | Accepted |
+| [0013](0013-derived-generators.md) | Derived generators for objects, case objects, `distinct`, `ref` and recursive types, via `fieldPairs` | Accepted |
+| [0014](0014-failure-database-and-examples.md) | Failure database (replay past failures first) and explicit examples | Accepted |
 
 ## Template
 

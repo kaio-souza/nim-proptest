@@ -53,6 +53,8 @@ type
     hints: seq[int64]       # boundary hints of the property (ADR-0012)
     nPrimary: int           # the first `nPrimary` hints come from the property itself
     hintsSet: bool
+    depth*: int             # nesting of derived objects / `recursive` levels (ADR-0013)
+    maxDepth*: int          # at this depth, refs are nil and collections minimal
     timing*: bool           # health check: this case measures generation time
     genNs*: int64           # generation time measured in timed cases
     genStart: MonoTime
@@ -84,6 +86,8 @@ type
 
 const
   defaultMaxChoices* = 8192
+  defaultMaxDepth* = 5
+    ## Nesting depth of recursive data while exploring (ADR-0013).
   defaultEdgeBias* = 0.25
     ## Share of exploration proposals that are edge cases (G8): integer
     ## limits, 0 and 1, special floats, empty and single-element collections.
@@ -111,7 +115,8 @@ const charOrder* = buildCharOrder()
 proc newChoiceSource*(seed: uint64; maxChoices = defaultMaxChoices;
                       edgeBias = defaultEdgeBias): ChoiceSource =
   result = ChoiceSource(rng: initXoshiro256(seed), maxChoices: maxChoices,
-                        edgeCut: uint64(clamp(edgeBias, 0.0, 1.0) * 65536.0))
+                        edgeCut: uint64(clamp(edgeBias, 0.0, 1.0) * 65536.0),
+                        maxDepth: defaultMaxDepth)
   result.buf = newSeq[uint64](maxChoices)
   result.prefix = newSeqOfCap[uint64](maxChoices)
   result.spans = newSeqOfCap[Span](64)
@@ -125,6 +130,7 @@ proc resetCase(src: ChoiceSource; size: int) {.inline.} =
   src.inputs.setLen(0)
   src.spans.setLen(0)
   src.steps.setLen(0)
+  src.depth = 0
 
 proc startRandom*(src: ChoiceSource; size: int) =
   ## Prepares a new exploration case of the given size.
@@ -179,6 +185,20 @@ proc beginBody*(src: ChoiceSource) {.inline.} =
   if src.timing and src.phase == cpGenerate:
     src.genNs += (getMonoTime() - src.genStart).inNanoseconds
   src.phase = cpBody
+
+# ------------------------------------------------------------------- nesting
+
+proc enterNested*(src: ChoiceSource) {.inline.} =
+  ## A derived object or a `recursive` level starts (ADR-0013).
+  inc src.depth
+
+proc leaveNested*(src: ChoiceSource) {.inline.} =
+  dec src.depth
+
+proc nestedRefChance*(src: ChoiceSource): float {.inline.} =
+  ## Chance of a non-nil `ref` while exploring: 0.8 at the top, falling with
+  ## depth, 0 at `maxDepth`.
+  if src.depth >= src.maxDepth: 0.0 else: 0.8 / float(src.depth + 1)
 
 # -------------------------------------------------------------------- labels
 
@@ -267,6 +287,40 @@ proc drawIndex*(src: ChoiceSource; n: int): int {.inline.} =
   ## Uniform index in `0 ..< n` (`n >= 1`). Shrinks toward 0.
   if n <= 1: return 0
   int(src.drawUpTo(uint64(n - 1)))
+
+const
+  runeCount = 0x110000 - 0x800   # every code point except surrogates
+  runeEdges = [0x00, 0x7F, 0x80, 0x7FF, 0x800, 0xFFFD, 0xFEFF, 0xFFFF, 0x10000, 0x10FFFF]
+
+proc runeOfIndex*(i: int): int =
+  ## Code point of choice `i`: printable ASCII first (simplest first, as
+  ## `printableAlphabet`), then control characters, then everything else
+  ## without surrogates.
+  if i < printableAlphabet.len: return ord(printableAlphabet[i])
+  let k = i - printableAlphabet.len
+  if k < 0x20: return k
+  result = 0x7F + (k - 0x20)
+  if result >= 0xD800: result += 0x800
+
+proc indexOfRune(cp: int): int =
+  if cp in 0x20 .. 0x7E: return printableAlphabet.find(char(cp))
+  if cp < 0x20: return printableAlphabet.len + cp
+  var k = cp - 0x7F
+  if cp >= 0xE000: k -= 0x800
+  printableAlphabet.len + 0x20 + k
+
+proc drawRune*(src: ChoiceSource): int =
+  ## A Unicode code point (not a surrogate). While exploring: printable
+  ## ASCII half of the time, then the rest of the BMP, astral planes and
+  ## boundary code points. Shrinks toward `'a'`.
+  let i = drawImpl(src, uint64(runeCount - 1), (block:
+    let r = src.rng.next()
+    case r and 7
+    of 0, 1, 2, 3: src.rng.below(uint64(printableAlphabet.len - 1))
+    of 4, 5: uint64(indexOfRune(0x80 + int(src.rng.below(0xD7FF - 0x80))))
+    of 6: uint64(indexOfRune(0x10000 + int(src.rng.below(0x10FFFF - 0x10000))))
+    else: uint64(indexOfRune(runeEdges[int((r shr 3) mod uint64(runeEdges.len))]))))
+  runeOfIndex(int(i))
 
 proc proposeMagnitude(src: ChoiceSource; maxMag: uint64): uint64 {.inline.} =
   ## Random-mode distribution for magnitudes (2 PRNG calls). With
@@ -482,8 +536,17 @@ proc initMany*(src: ChoiceSource; minLen, maxLen: int): Many =
   ## target length is picked from the current size; it costs no choice.
   result = Many(minLen: minLen, maxLen: maxLen, target: minLen, elemStart: -1)
   if src.mode == smRandom and maxLen > minLen:
+    if src.depth >= src.maxDepth: return    # deepest level: minimal (ADR-0013)
     let extra = uint64(maxLen - minLen)
-    let typical = uint64(2 * max(src.size, 1))
+    # Nested collections are shorter (ADR-0013): half at depth 1, so the
+    # `seq` fields of ordinary objects stay useful, then 4x shorter per level,
+    # so recursive data (a tree's children) branch less than once on average
+    # and stay small. At depth 0 this is the v0.3 distribution, unchanged.
+    let base = 2 * max(src.size, 1)
+    let typical = uint64(case src.depth
+                         of 0: base
+                         of 1: max(1, base div 2)
+                         else: max(1, base shr (2 * src.depth)))
     let r = src.rng.next()
     if (r and 0xFFFF) < src.edgeCut:
       # Edge (G8): the shortest collection, or one element more.

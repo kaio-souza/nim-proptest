@@ -29,14 +29,13 @@ src/
   proptest/
     prng.nim                   # SplitMix64, xoshiro256**, stable FNV-1a hash (ADR-0005)
     choices.nim                # ChoiceSource, reused buffers, overrun, draw primitives, assume (ADR-0001)
-    gen.nim                    # arbitrary(src, T) overloads, Gen[T], combinators, hoist/drawFrom (ADR-0007)
+    gen.nim                    # arbitrary(src, T) overloads incl. derived objects (ADR-0013), Gen[T], combinators, hoist/drawFrom (ADR-0007)
     assertions.nim             # check/require rewriting, propCheck, show (ADR-0009)
     signature.nim              # failure signatures from exception type + user stack frame (ADR-0006)
     shrink.nim                 # shrink passes on choice sequences, tried-sequence cache
     engine.nim                 # Settings, run loop: explore, shrink, double re-run, results
     report.nim                 # text report
-    database.nim               # run seed, crash breadcrumbs (ADR-0003); failure database (planned)
-    derive.nim                 # (planned) compile-time generators for objects and distinct types
+    database.nim               # run seed, crash breadcrumbs (ADR-0003); failure database (ADR-0014)
     stateful.nim               # stateMachine and replayCommands macros, sequence runner, swarm (ADR-0011, ADR-0012)
     labels.nim                 # classify / cover / label rewriting into compile-time slots (ADR-0012)
     mining.nim                 # integer constants of the property and the test file as boundary hints (ADR-0012)
@@ -65,8 +64,8 @@ The random distribution (what is likely while exploring) and the shrink order (w
 forAll(...)
   ├─ derive property seed = SplitMix64(run seed, FNV-1a(property name))
   ├─ write run seed to .proptest/last-run                  (crash breadcrumbs)
-  ├─ (planned) replay saved sequences from the failure database (R3)
-  ├─ (planned) replay explicit examples                         (R4)
+  ├─ run explicit examples                                       (R4)
+  ├─ replay saved sequences from the failure database           (R3)
   └─ for each of `cases` cases (continuing after a failure, until maxFailures distinct):
        ├─ choice source records draws from the PRNG (size grows over the run)
        ├─ generators build the inputs (overrun → invalid case)
@@ -81,7 +80,7 @@ forAll(...)
        │    lower (binary search), then merge
        │    accept candidate only if smaller in shortlex AND same signature
        ├─ re-run the minimal sequence twice: fails both times → counterexample; otherwise → flaky
-       ├─ save the sequence to the failure database
+       ├─ save the sequence to the failure database (passing entries: count, forget after 3)
        └─ report: inputs, error, seed, replay command, statistics
 ```
 

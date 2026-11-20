@@ -90,7 +90,7 @@ proc minedHints*(callSite: NimNode): NimNode {.compileTime.} =
   for v in minedCache[file]:
     result.add newLit(v)
   if result.len == 0:
-    result = newCall(nnkBracketExpr.newTree(ident"array", newLit(0), ident"int64"))
+    result = newCall(ident"default", nnkBracketExpr.newTree(ident"array", newLit(0), ident"int64"))
 
 proc bodyHints*(body, acc: NimNode): NimNode {.compileTime.} =
   ## Statements that declare `acc` and collect into it the
@@ -117,7 +117,12 @@ proc bodyHints*(body, acc: NimNode): NimNode {.compileTime.} =
     result.add newCall(newDotExpr(acc, ident"add"), newLit(v))
   for name in names:
     let id = ident(name)
+    # Only integer constants: checking the type first, because evaluating
+    # `int64(x)` at compile time crashes Nim 2.2.4 for some constants (a
+    # `set[char]` such as `Letters`) instead of failing `compiles`.
     result.add quote do:
-      when compiles(static(int64(`id`))):
-        when static(int64(`id`)) notin [0'i64, 1, -1]:
-          `acc`.add static(int64(`id`))
+      when compiles(typeof(`id`)):
+        when typeof(`id`) isnot typedesc and typeof(`id`) is SomeInteger:
+          when compiles(static(`id`)):
+            when int64(static(`id`)) notin [0'i64, 1, -1]:
+              `acc`.add int64(static(`id`))

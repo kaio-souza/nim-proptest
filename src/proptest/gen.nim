@@ -8,10 +8,10 @@
 ## - `Gen[T]`: a value built with combinators (`ints`, `map`, `filter`...),
 ##   created once per property and shared by every case.
 
-import std/options
+import std/[options, macros, typetraits, tables, sets, unicode]
 import choices
 
-export options
+export options, tables, sets
 
 # ------------------------------------------------------- type-inferred (G2/G3)
 
@@ -70,6 +70,82 @@ proc arbitrary*[T: tuple](src: ChoiceSource; t: typedesc[T]): T =
   mixin arbitrary
   for f in result.fields:
     f = src.arbitrary(typeof(f))
+
+# ------------------------------------------- containers of the standard library (G5)
+
+proc arbitrary*[K, V](src: ChoiceSource; t: typedesc[Table[K, V]]): Table[K, V] =
+  ## Shrinks toward fewer entries and simpler keys and values.
+  mixin arbitrary
+  var m = src.initMany(0, high(int))
+  while src.more(m):
+    let k = src.arbitrary(K)
+    result[k] = src.arbitrary(V)
+
+proc arbitrary*[K, V](src: ChoiceSource; t: typedesc[OrderedTable[K, V]]): OrderedTable[K, V] =
+  mixin arbitrary
+  var m = src.initMany(0, high(int))
+  while src.more(m):
+    let k = src.arbitrary(K)
+    result[k] = src.arbitrary(V)
+
+proc arbitrary*[T](src: ChoiceSource; t: typedesc[HashSet[T]]): HashSet[T] =
+  mixin arbitrary
+  var m = src.initMany(0, high(int))
+  while src.more(m):
+    result.incl src.arbitrary(T)
+
+# ------------------------------------------------- derived generators (G4, ADR-0013)
+
+macro discriminantNames(T: typedesc): untyped =
+  ## Names of the discriminant fields of an object type, at compile time.
+  var names: seq[string]
+  proc walk(n: NimNode) =
+    if n.kind == nnkRecCase:
+      var d = n[0][0]
+      if d.kind == nnkPostfix: d = d[1]
+      names.add $d
+    for c in n: walk(c)
+  var impl = getTypeImpl(T)
+  if impl.kind == nnkBracketExpr: impl = getTypeImpl(impl[1])
+  walk(impl)
+  result = newLit(names)
+
+proc arbitrary*[T: distinct](src: ChoiceSource; t: typedesc[T]): T =
+  ## A `distinct` type: a value of its base type.
+  mixin arbitrary
+  T(src.arbitrary(distinctBase(T)))
+
+proc arbitrary*[T: object](src: ChoiceSource; t: typedesc[T]): T =
+  ## Any object, filled field by field (private fields included, through
+  ## `fieldPairs`); for a case object, the discriminant is chosen first and
+  ## the fields of its branch follow. Overload `arbitrary` for `T` when
+  ## random field values can make an invalid object.
+  mixin arbitrary
+  const discriminants = discriminantNames(T)
+  src.enterNested()
+  defer: src.leaveNested()
+  for name, f in result.fieldPairs:
+    when not compiles(src.arbitrary(typeof(f))):
+      {.error: "proptest cannot generate field '" & name & "' of " & $T &
+               ": overload `arbitrary` for its type, or for " & $T.}
+    elif name in discriminants and typeof(f) is range:
+      # Assigning a `range` discriminant crashes Nim 2.2.4 ("can't find magic
+      # equals operator for type kind tyRange") and it has no address.
+      {.error: "proptest cannot derive " & $T & ": its discriminant '" & name &
+               "' is a range type; use an enum, or overload `arbitrary` for " & $T.}
+    elif name in discriminants:
+      {.cast(uncheckedAssign).}:
+        f = src.arbitrary(typeof(f))
+    else:
+      f = src.arbitrary(typeof(f))
+
+proc arbitrary*[T: ref object](src: ChoiceSource; t: typedesc[T]): T =
+  ## `nil` (the simplest value) or a new object. While exploring, `nil`
+  ## becomes likelier with nesting depth, which bounds recursive types.
+  mixin arbitrary
+  if src.drawBool(src.nestedRefChance):
+    new(result)
+    result[] = src.arbitrary(typeof(result[]))
 
 # ---------------------------------------------------------------- Gen[T] (G1)
 
@@ -150,6 +226,87 @@ proc oneOf*[T](gens: varargs[Gen[T]]): Gen[T] =
     raise newException(ValueError, "oneOf: no generators")
   let gs = @gens
   newGen(proc(src: ChoiceSource): T = gs[src.drawIndex(gs.len)].run(src))
+
+proc frequency*[T](choices: openArray[(int, Gen[T])]): Gen[T] =
+  ## Weighted choice of a generator (C3): `frequency([(3, small), (1, large)])`.
+  ## Shrinks toward the first entry.
+  var weights: seq[int]
+  var gens: seq[Gen[T]]
+  var total = 0
+  for (w, g) in choices:
+    if w < 0: raise newException(ValueError, "frequency: negative weight")
+    if w > 0:
+      weights.add w
+      gens.add g
+      total += w
+  if total == 0: raise newException(ValueError, "frequency: no positive weight")
+  newGen(proc(src: ChoiceSource): T =
+    var v = int(src.drawUpTo(uint64(total - 1)))
+    for i, w in weights:
+      if v < w: return gens[i].run(src)
+      v -= w
+    gens[^1].run(src))
+
+proc recursive*[T](base: Gen[T]; extend: proc(inner: Gen[T]): Gen[T];
+                   maxDepth = defaultMaxDepth): Gen[T] =
+  ## Tree-shaped values (C4). `extend` builds one level from the generator of
+  ## the level below, e.g. `proc(inner) = seqs(inner).map(toNode)`. Each
+  ## level chooses `base` (simpler, the shrink target) or one level deeper;
+  ## at most `maxDepth` levels, and nested collections get shorter.
+  if maxDepth < 0: raise newException(ValueError, "recursive: maxDepth < 0")
+  # A proc per level: closures created in a loop would share one `deeper`.
+  proc level(base, deeper: Gen[T]): Gen[T] =
+    newGen(proc(src: ChoiceSource): T =
+      if src.drawBool(0.5):
+        src.enterNested()
+        defer: src.leaveNested()
+        deeper.run(src)
+      else:
+        base.run(src))
+  result = base
+  for _ in 1 .. maxDepth:
+    result = level(base, extend(result))
+
+proc tables*[K, V](keys: Gen[K]; values: Gen[V]; minLen = 0; maxLen = high(int)): Gen[Table[K, V]] =
+  ## Tables with keys and values from the given generators. Duplicate keys
+  ## collapse, so a table may have fewer than `minLen` entries.
+  if minLen < 0 or maxLen < minLen: raise newException(ValueError, "tables: invalid lengths")
+  newGen(proc(src: ChoiceSource): Table[K, V] =
+    var m = src.initMany(minLen, maxLen)
+    while src.more(m):
+      let k = keys.run(src)
+      result[k] = values.run(src))
+
+proc hashSets*[T](g: Gen[T]; minLen = 0; maxLen = high(int)): Gen[HashSet[T]] =
+  ## Sets of values from `g`; duplicates collapse.
+  if minLen < 0 or maxLen < minLen: raise newException(ValueError, "hashSets: invalid lengths")
+  newGen(proc(src: ChoiceSource): HashSet[T] =
+    var m = src.initMany(minLen, maxLen)
+    while src.more(m):
+      result.incl g.run(src))
+
+const alphanumeric* = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  ## Letters and digits, simplest first (G6).
+
+proc identifiers*(maxLen = 16): Gen[string] =
+  ## Identifiers: a letter, then letters and digits (`a`, `x1`, `userId`).
+  ## Shrinks toward `"a"`.
+  if maxLen < 1: raise newException(ValueError, "identifiers: maxLen < 1")
+  newGen(proc(src: ChoiceSource): string =
+    result.add alphanumeric[src.drawIndex(52)]
+    var m = src.initMany(0, maxLen - 1)
+    while src.more(m):
+      result.add alphanumeric[src.drawIndex(alphanumeric.len)])
+
+proc unicodeStrings*(minLen = 0; maxLen = high(int)): Gen[string] =
+  ## Valid UTF-8 strings of `minLen .. maxLen` code points (G6): ASCII,
+  ## control characters, the whole BMP and astral planes, boundary code
+  ## points; no surrogates. Shrinks toward shorter, ASCII strings.
+  if minLen < 0 or maxLen < minLen: raise newException(ValueError, "unicodeStrings: invalid lengths")
+  newGen(proc(src: ChoiceSource): string =
+    var m = src.initMany(minLen, maxLen)
+    while src.more(m):
+      result.add Rune(src.drawRune()).toUTF8)
 
 proc bools*(): Gen[bool] =
   newGen(proc(src: ChoiceSource): bool = src.drawBool())
