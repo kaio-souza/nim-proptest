@@ -352,6 +352,255 @@ proc appendReport*(path: string; r: PropertyResult; durationMs = 0.0) =
 
 # -------------------------------------------------------------------- engine
 
+type
+  Run = object
+    ## State shared by the phases of one `runProperty` call.
+    prop: PropertyProc
+    examples: seq[PropertyProc]
+    settings: Settings
+    src: ChoiceSource
+    deadlineNs: int64      # shrinking and re-runs
+    started: MonoTime      # the time budget (PF8) counts from before the replays
+    caseNumber: int
+    failingCases: int
+    kept: seq[DbEntry]     # saved entries still worth keeping (R3)
+
+proc hasSignature(failures: openArray[Failure]; s: Signature): bool =
+  for f in failures:
+    if f.signature == s: return true
+
+proc noteFailure(run: var Run; res: var PropertyResult; r: CaseResult;
+                 how: FailureSource; index = -1) =
+  inc run.failingCases
+  if res.firstFailureAt == 0: res.firstFailureAt = run.caseNumber
+  if not res.failures.hasSignature(r.signature):
+    res.failures.add Failure(signature: r.signature, choices: run.src.choices,
+                             message: r.message, spans: run.src.spans,
+                             source: how, exampleIndex: index)
+
+proc saveFailures(run: Run; res: PropertyResult; dbKey: string) =
+  ## Saves what failed (reproduced) and what is still being re-checked.
+  if dbKey.len == 0: return
+  var entries = run.kept
+  if res.status == psFailed:
+    for f in res.failures:
+      if f.source != fsExample and not f.flaky:
+        var dup = false
+        for e in entries:
+          if e.choices == f.choices: dup = true
+        if not dup: entries.add DbEntry(passes: 0, choices: f.choices)
+  saveEntries(dbKey, entries)
+
+proc replayKnown(run: var Run; res: var PropertyResult; dbKey: string) =
+  ## 0. Explicit examples, then saved failures, before any random case.
+  let src = run.src
+  for i, ex in run.examples:
+    src.startReplay([], run.settings.maxSize)
+    inc run.caseNumber
+    src.recordInputs = true          # rare cases: inputs for the watchdog
+    caseStarted(waExample, run.caseNumber)
+    let r = execute(ex, src, run.deadlineNs, run.settings.name)
+    if r.outcome == ocFail: run.noteFailure(res, r, fsExample, i)
+  for e in loadEntries(dbKey):
+    src.startReplay(e.choices, run.settings.maxSize)
+    inc run.caseNumber
+    src.recordInputs = true          # rare cases: inputs for the watchdog
+    caseStarted(if e.passes == hungMark: waSavedHang else: waSaved, run.caseNumber)
+    let r = execute(run.prop, src, run.deadlineNs, run.settings.name)
+    case r.outcome
+    of ocFail:
+      run.noteFailure(res, r, fsDatabase)
+    of ocPass:
+      if e.passes + 1 < dbPassesToForget:
+        run.kept.add DbEntry(passes: e.passes + 1, choices: e.choices)
+    of ocDiscard, ocOverrun, ocGenError:
+      discard              # no longer fits the generators: forgotten (RL12)
+
+proc explore(run: var Run; res: var PropertyResult): bool =
+  ## 1. Explores `cases` cases (passing or failing), unless too many are
+  ## discarded. After a failure, exploration goes on to look for other
+  ## distinct bugs (RL5) and stops once `maxFailures` are known.
+  ## Returns false when the run ends here (gave up, generator error).
+  let settings = run.settings
+  let src = run.src
+  let maxDiscards = settings.cases * settings.maxDiscardRatio
+  let verbose = settings.verbosity >= vVerbose
+  # RL8: 1.25 x the deadline while exploring, so a case just over it does not
+  # turn into a flaky report; shrinking and re-runs use the deadline itself.
+  let exploreLimit = run.deadlineNs + run.deadlineNs div 4
+  let started = run.started
+  let budgetNs = int64(settings.timeBudget) * 1_000_000
+  # Health checks (RL11): distinct inputs, and generation time on 1 case in 8.
+  # Up to 64 distinct input hashes in a fixed array: no allocation, and
+  # "few distinct inputs" only matters below that.
+  var seenHashes: array[64, Hash]
+  var nSeen = 0
+  var manyDistinct = false
+  var timedNs = 0'i64
+  var bests: seq[tuple[label: string, score: float, choices: seq[uint64]]]
+  var nextTarget = 0
+  while res.casesRun + run.failingCases < settings.cases and
+        res.failures.len < settings.maxFailures:
+    if budgetNs > 0 and (getMonoTime() - started).inNanoseconds > budgetNs:
+      # PF8: stop gracefully and say so.
+      res.warnings.add "time budget of " & $settings.timeBudget & " ms reached after " &
+        $(res.casesRun + run.failingCases) & " of " & $settings.cases & " cases"
+      break
+    let size = sizeFor(settings, res.casesRun + run.failingCases + res.discarded)
+    # Targeted exploration (ADR-0016): once half of the cases ran, every
+    # other case starts from a prefix (at least half) of the best case of a
+    # `target` name, in turn, and explores from there.
+    let attempt = res.casesRun + run.failingCases + res.discarded
+    if bests.len > 0 and 2 * attempt >= settings.cases and (attempt and 1) == 1:
+      let b = addr bests[nextTarget mod bests.len]
+      inc nextTarget
+      let n = b.choices.len
+      let keep = if n <= 1: n else: n div 2 + int(src.nextRandom() mod uint64(n - n div 2))
+      src.startExtend(b.choices, keep, size)
+    else:
+      src.startRandom(size)
+    inc run.caseNumber
+    src.recordInputs = verbose
+    src.timing = (run.caseNumber and 7) == 0 and hcSlowGeneration notin settings.suppress
+    let t0 = if src.timing: getMonoTime() else: MonoTime()
+    caseStarted(waExploring, run.caseNumber)
+    let r = execute(run.prop, src, exploreLimit, settings.name)
+    if src.timing: timedNs += (getMonoTime() - t0).inNanoseconds
+    if r.outcome == ocPass and not manyDistinct and hcFewDistinct notin settings.suppress:
+      let h = src.choicesHash
+      var known = false
+      for k in 0 ..< nSeen:
+        if seenHashes[k] == h:
+          known = true
+          break
+      if not known:
+        if nSeen == seenHashes.len: manyDistinct = true
+        else:
+          seenHashes[nSeen] = h
+          inc nSeen
+    if verbose: echoCase(settings.name, run.caseNumber, r.outcome, src)
+    case r.outcome
+    of ocPass:
+      inc res.casesRun
+      # Keep the best case per `target` name; copying only on improvement.
+      for (label, score) in src.caseTargets:
+        var found = false
+        for b in bests.mitems:
+          if b.label == label:
+            found = true
+            if score > b.score:
+              b.score = score
+              b.choices = src.choices
+        if not found:
+          bests.add (label, score, src.choices)
+    of ocDiscard, ocOverrun:
+      src.discardLabels()
+      inc res.discarded
+      if r.filter: inc res.filterDiscards
+      if r.outcome == ocOverrun: inc res.overruns
+      if res.discarded > maxDiscards:
+        res.status = psGaveUp
+        res.message = "gave up after " & $res.casesRun & " passing cases: " &
+          $res.discarded & " cases discarded (" & $res.filterDiscards &
+          " by filters, " & $res.overruns & " too large)"
+        if res.filterDiscards * 2 > res.discarded:
+          res.message.add ". Most discards come from `filter` or `uniqueSeqs` rejecting " &
+            "values: generate valid values directly, or widen the generator."
+        return false
+    of ocGenError:
+      res.status = psGeneratorError
+      res.message = "a generator raised: " & r.message
+      return false
+    of ocFail:
+      run.noteFailure(res, r, fsExplored)
+
+  # Health check warnings (RL11).
+  let explored = res.casesRun + run.failingCases
+  if hcLargeData notin settings.suppress and res.overruns * 10 > explored + res.discarded and
+     res.overruns > 0:
+    res.warnings.add $res.overruns & " cases needed more than maxChoices (" &
+      $settings.maxChoices & ") choices and were skipped: bound collection sizes " &
+      "(`seqs(g, maxLen = ...)`) or raise maxChoices"
+  if hcFewDistinct notin settings.suppress and res.casesRun >= 50 and not manyDistinct and
+     nSeen * 10 < res.casesRun:
+    res.warnings.add "only " & $nSeen & " distinct inputs in " & $res.casesRun &
+      " passing cases: the input space is small, so a plain loop over it would be exhaustive"
+  if hcSlowGeneration notin settings.suppress and timedNs > 50_000_000 and
+     src.genNs * 10 > timedNs * 8:
+    res.warnings.add "generating inputs takes " & $(src.genNs * 100 div timedNs) &
+      "% of the run time: prefer constructive generators to `filter`, or smaller sizes"
+  res.labels = src.labelStats
+  for b in bests: res.targets.add (b.label, b.score)
+  res.labeledCases = res.casesRun + run.failingCases
+  res.lengthHist = src.lengthHist
+  true
+
+proc shrinkAll(run: var Run; res: var PropertyResult) =
+  ## 2. Shrinks every distinct failure (RL4, RL5). Failures found while
+  ## shrinking another one are queued and shrunk in turn. Explicit examples
+  ## are not shrunk: their values are fixed, they draw no choices.
+  let settings = run.settings
+  let src = run.src
+  let prop = run.prop
+  let deadlineNs = run.deadlineNs
+  let caseNumber = run.caseNumber
+  var failures = move res.failures
+  var idx = 0
+  while idx < failures.len:
+    if failures[idx].source == fsExample:
+      inc idx
+      continue
+    let target = failures[idx].signature
+    let probe: Probe = proc(candidate: seq[uint64]; used: var seq[uint64];
+                            spans: var seq[Span]): bool =
+      src.startReplay(candidate, settings.maxSize)
+      caseStarted(waShrinking, caseNumber)
+      let r = execute(prop, src, deadlineNs, settings.name)
+      if r.outcome != ocFail: return false
+      used = src.choices
+      spans = src.spans
+      if r.signature == target:
+        if settings.verbosity >= vDebug:
+          echo "  [", settings.name, "] shrink: ", candidate.len, " choices still fail"
+        return true
+      if failures.len < settings.maxFailures and not failures.hasSignature(r.signature):
+        failures.add Failure(signature: r.signature, choices: used, message: r.message,
+                             spans: spans)
+    var sh = initShrinker(failures[idx].choices, settings.maxShrinks, probe,
+                          failures[idx].spans, settings.shrinkTimeBudget)
+    sh.shrink()
+    failures[idx].shrinkStopped = sh.timedOut
+    failures[idx].choices = sh.best
+    failures[idx].shrinkExecutions = sh.executions
+    inc idx
+  res.failures = move failures
+
+proc rerunMinimal(run: var Run; res: var PropertyResult) =
+  ## 3. Re-runs each minimal sequence twice: records inputs and detects
+  ## flakiness (RL3). Two runs catch properties that alternate.
+  let src = run.src
+  var anyReal = false
+  for f in res.failures.mitems:
+    var reproduced = true
+    let body = if f.source == fsExample: run.examples[f.exampleIndex] else: run.prop
+    for attempt in 0 .. 1:
+      src.startReplay(f.choices, run.settings.maxSize)
+      src.recordInputs = attempt == 1
+      caseStarted(waRerunning, run.caseNumber)
+      let r = execute(body, src, run.deadlineNs, run.settings.name)
+      if r.outcome == ocFail and r.signature == f.signature:
+        if attempt == 1:
+          f.message = r.message
+          f.stackTrace = r.stackTrace
+      else:
+        reproduced = false
+    f.inputs = src.inputs
+    f.steps = src.steps
+    f.machine = src.machine
+    if reproduced: anyReal = true
+    else: f.flaky = true
+  res.status = if anyReal: psFailed else: psFlaky
+
 proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
                   examples: seq[PropertyProc] = @[]): PropertyResult =
   ## Runs a property and returns its result. Never raises for failures of the
@@ -376,231 +625,17 @@ proc runProperty*(prop: PropertyProc; settings: Settings; dbKey = "";
     if watching: disarmWatchdog()
   if not settings.mineConstants: src.useHints([])   # locks the hints empty
   src.maxDepth = settings.maxDepth
-  let maxDiscards = settings.cases * settings.maxDiscardRatio
-  let verbose = settings.verbosity >= vVerbose
-  # RL8: 1.25 x the deadline while exploring, so a case just over it does not
-  # turn into a flaky report; shrinking and re-runs use the deadline itself.
-  let deadlineNs = int64(settings.deadline) * 1_000_000
-  let exploreLimit = deadlineNs + deadlineNs div 4
-  let started = getMonoTime()
-  let budgetNs = int64(settings.timeBudget) * 1_000_000
-  var failingCases = 0
-  var caseNumber = 0
+  var run = Run(prop: prop, examples: examples, settings: settings, src: src,
+                deadlineNs: int64(settings.deadline) * 1_000_000, started: getMonoTime())
+  defer: run.saveFailures(result, dbKey)
 
-  # 0. Explicit examples, then saved failures, before any random case.
-  var kept: seq[DbEntry]          # saved entries still worth keeping
-  defer:
-    # Save what failed (reproduced) and what is still being re-checked.
-    if dbKey.len > 0:
-      var entries = kept
-      if result.status == psFailed:
-        for f in result.failures:
-          if f.source != fsExample and not f.flaky:
-            var dup = false
-            for e in entries:
-              if e.choices == f.choices: dup = true
-            if not dup: entries.add DbEntry(passes: 0, choices: f.choices)
-      saveEntries(dbKey, entries)
-  template noteFailure(r: CaseResult; how: FailureSource; index = -1) =
-    inc failingCases
-    if result.firstFailureAt == 0: result.firstFailureAt = caseNumber
-    var known = false
-    for f in result.failures:
-      if f.signature == r.signature: known = true
-    if not known:
-      result.failures.add Failure(signature: r.signature, choices: src.choices,
-                                  message: r.message, spans: src.spans,
-                                  source: how, exampleIndex: index)
-  for i, ex in examples:
-    src.startReplay([], settings.maxSize)
-    inc caseNumber
-    src.recordInputs = true          # rare cases: inputs for the watchdog
-    caseStarted(waExample, caseNumber)
-    let r = execute(ex, src, deadlineNs, settings.name)
-    if r.outcome == ocFail: noteFailure(r, fsExample, i)
-  for e in loadEntries(dbKey):
-    src.startReplay(e.choices, settings.maxSize)
-    inc caseNumber
-    src.recordInputs = true          # rare cases: inputs for the watchdog
-    caseStarted(if e.passes == hungMark: waSavedHang else: waSaved, caseNumber)
-    let r = execute(prop, src, deadlineNs, settings.name)
-    case r.outcome
-    of ocFail:
-      noteFailure(r, fsDatabase)
-    of ocPass:
-      if e.passes + 1 < dbPassesToForget:
-        kept.add DbEntry(passes: e.passes + 1, choices: e.choices)
-    of ocDiscard, ocOverrun, ocGenError:
-      discard              # no longer fits the generators: forgotten (RL12)
-
-  # 1. Explore `cases` cases (passing or failing), unless too many are
-  #    discarded. After a failure, exploration goes on to look for other
-  #    distinct bugs (RL5) and stops once `maxFailures` are known.
-  # Health checks (RL11): distinct inputs, and generation time on 1 case in 8.
-  # Up to 64 distinct input hashes in a fixed array: no allocation, and
-  # "few distinct inputs" only matters below that.
-  var seenHashes: array[64, Hash]
-  var nSeen = 0
-  var manyDistinct = false
-  var timedNs = 0'i64
-  var bests: seq[tuple[label: string, score: float, choices: seq[uint64]]]
-  var nextTarget = 0
-  while result.casesRun + failingCases < settings.cases and
-        result.failures.len < settings.maxFailures:
-    if budgetNs > 0 and (getMonoTime() - started).inNanoseconds > budgetNs:
-      # PF8: stop gracefully and say so.
-      result.warnings.add "time budget of " & $settings.timeBudget & " ms reached after " &
-        $(result.casesRun + failingCases) & " of " & $settings.cases & " cases"
-      break
-    let size = sizeFor(settings, result.casesRun + failingCases + result.discarded)
-    # Targeted exploration (ADR-0016): once half of the cases ran, every
-    # other case starts from a prefix (at least half) of the best case of a
-    # `target` name, in turn, and explores from there.
-    let attempt = result.casesRun + failingCases + result.discarded
-    if bests.len > 0 and 2 * attempt >= settings.cases and (attempt and 1) == 1:
-      let b = addr bests[nextTarget mod bests.len]
-      inc nextTarget
-      let n = b.choices.len
-      let keep = if n <= 1: n else: n div 2 + int(src.nextRandom() mod uint64(n - n div 2))
-      src.startExtend(b.choices, keep, size)
-    else:
-      src.startRandom(size)
-    inc caseNumber
-    src.recordInputs = verbose
-    src.timing = (caseNumber and 7) == 0 and hcSlowGeneration notin settings.suppress
-    let t0 = if src.timing: getMonoTime() else: MonoTime()
-    caseStarted(waExploring, caseNumber)
-    let r = execute(prop, src, exploreLimit, settings.name)
-    if src.timing: timedNs += (getMonoTime() - t0).inNanoseconds
-    if r.outcome == ocPass and not manyDistinct and hcFewDistinct notin settings.suppress:
-      let h = src.choicesHash
-      var known = false
-      for k in 0 ..< nSeen:
-        if seenHashes[k] == h:
-          known = true
-          break
-      if not known:
-        if nSeen == seenHashes.len: manyDistinct = true
-        else:
-          seenHashes[nSeen] = h
-          inc nSeen
-    if verbose: echoCase(settings.name, caseNumber, r.outcome, src)
-    case r.outcome
-    of ocPass:
-      inc result.casesRun
-      # Keep the best case per `target` name; copying only on improvement.
-      for (label, score) in src.caseTargets:
-        var found = false
-        for b in bests.mitems:
-          if b.label == label:
-            found = true
-            if score > b.score:
-              b.score = score
-              b.choices = src.choices
-        if not found:
-          bests.add (label, score, src.choices)
-    of ocDiscard, ocOverrun:
-      src.discardLabels()
-      inc result.discarded
-      if r.filter: inc result.filterDiscards
-      if r.outcome == ocOverrun: inc result.overruns
-      if result.discarded > maxDiscards:
-        result.status = psGaveUp
-        result.message = "gave up after " & $result.casesRun & " passing cases: " &
-          $result.discarded & " cases discarded (" & $result.filterDiscards &
-          " by filters, " & $result.overruns & " too large)"
-        if result.filterDiscards * 2 > result.discarded:
-          result.message.add ". Most discards come from `filter` or `uniqueSeqs` rejecting " &
-            "values: generate valid values directly, or widen the generator."
-        return
-    of ocGenError:
-      result.status = psGeneratorError
-      result.message = "a generator raised: " & r.message
-      return
-    of ocFail:
-      noteFailure(r, fsExplored)
-  let explored = result.casesRun + failingCases
-  if hcLargeData notin settings.suppress and result.overruns * 10 > explored + result.discarded and
-     result.overruns > 0:
-    result.warnings.add $result.overruns & " cases needed more than maxChoices (" &
-      $settings.maxChoices & ") choices and were skipped: bound collection sizes " &
-      "(`seqs(g, maxLen = ...)`) or raise maxChoices"
-  if hcFewDistinct notin settings.suppress and result.casesRun >= 50 and not manyDistinct and
-     nSeen * 10 < result.casesRun:
-    result.warnings.add "only " & $nSeen & " distinct inputs in " & $result.casesRun &
-      " passing cases: the input space is small, so a plain loop over it would be exhaustive"
-  if hcSlowGeneration notin settings.suppress and timedNs > 50_000_000 and
-     src.genNs * 10 > timedNs * 8:
-    result.warnings.add "generating inputs takes " & $(src.genNs * 100 div timedNs) &
-      "% of the run time: prefer constructive generators to `filter`, or smaller sizes"
-  result.labels = src.labelStats
-  for b in bests: result.targets.add (b.label, b.score)
-  result.labeledCases = result.casesRun + failingCases
-  result.lengthHist = src.lengthHist
+  run.replayKnown(result, dbKey)
+  if not run.explore(result): return
   if result.failures.len == 0:
     result.status = psPassed
     result.checkCoverage()
     return
-
-  # 2. Shrink every distinct failure (RL4, RL5). Failures found while
-  #    shrinking another one are queued and shrunk in turn.
-  var failures = move result.failures
-  let maxShrinks = settings.maxShrinks
-  let maxFailures = settings.maxFailures
-  let maxSize = settings.maxSize
-  var idx = 0
-  while idx < failures.len:
-    let target = failures[idx].signature
-    let probe: Probe = proc(candidate: seq[uint64]; used: var seq[uint64];
-                            spans: var seq[Span]): bool =
-      src.startReplay(candidate, maxSize)
-      caseStarted(waShrinking, caseNumber)
-      let r = execute(prop, src, deadlineNs, settings.name)
-      if r.outcome != ocFail: return false
-      used = src.choices
-      spans = src.spans
-      if r.signature == target:
-        if settings.verbosity >= vDebug:
-          echo "  [", settings.name, "] shrink: ", candidate.len, " choices still fail"
-        return true
-      if failures.len < maxFailures:
-        var known = false
-        for f in failures:
-          if f.signature == r.signature: known = true
-        if not known:
-          failures.add Failure(signature: r.signature, choices: used, message: r.message,
-                               spans: spans)
-    var sh = initShrinker(failures[idx].choices, maxShrinks, probe, failures[idx].spans,
-                          settings.shrinkTimeBudget)
-    sh.shrink()
-    failures[idx].shrinkStopped = sh.timedOut
-    failures[idx].choices = sh.best
-    failures[idx].shrinkExecutions = sh.executions
-    inc idx
-  result.failures = move failures
-
-  # 3. Re-run each minimal sequence twice: record inputs and detect
-  #    flakiness (RL3). Two runs catch properties that alternate.
-  var anyReal = false
-  for f in result.failures.mitems:
-    var reproduced = true
-    let run = if f.source == fsExample: examples[f.exampleIndex] else: prop
-    for attempt in 0 .. 1:
-      src.startReplay(f.choices, settings.maxSize)
-      src.recordInputs = attempt == 1
-      caseStarted(waRerunning, caseNumber)
-      let r = execute(run, src, deadlineNs, settings.name)
-      if r.outcome == ocFail and r.signature == f.signature:
-        if attempt == 1:
-          f.message = r.message
-          f.stackTrace = r.stackTrace
-      else:
-        reproduced = false
-    f.inputs = src.inputs
-    f.steps = src.steps
-    f.machine = src.machine
-    if reproduced: anyReal = true
-    else: f.flaky = true
-  result.status = if anyReal: psFailed else: psFlaky
+  run.shrinkAll(result)
+  run.rerunMinimal(result)
 
 {.pop.}

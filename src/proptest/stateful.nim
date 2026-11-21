@@ -196,131 +196,132 @@ proc field(cmd: Command; i: int): NimNode =
 proc used(n: NimNode): NimNode =
   nnkPragmaExpr.newTree(n, nnkPragma.newTree(ident"used"))
 
-macro stateMachine*(name, body: untyped): untyped =
-  ## Defines a state machine at module level; see ADR-0011 and the stateful
-  ## testing tutorial.
-  let m = parseMachine(name, body)
-  let mName = $m.name
-  let stepT = ident(mName & "Step")
-  let kindT = ident(mName & "StepKind")
-  let modelId = ident"model"
-  let propCheckSym = bindSym"propCheck"
-  result = newStmtList()
+# ---------------------------------------------------------- code generation
 
-  # Argument types: what the source draws, with model and setup in scope.
+type
+  Gen = object
+    ## What every part of the generated code refers to.
+    m: Machine
+    mName: string
+    stepT, kindT: NimNode       # <Name>Step, <Name>StepKind
+    argTypes: seq[seq[NimNode]] # concrete alias per command argument
+    propCheckSym: NimNode
+
+  RunnerSyms = object
+    ## Symbols of the runner closure, shared by its per-command branches.
+    src, steps, replay, maxSteps, swarm: NimNode
+    many, idx, enabled, n, ok, cur, allowed, enabledAll, nAll: NimNode
+
+proc argTypeAliases(g: var Gen): NimNode =
+  ## Argument types: what the source draws, with model and setup in scope.
+  ## Each gets a concrete alias: a `typeof` used directly as a parameter type
+  ## stays unresolved during overload resolution.
+  let modelId = ident"model"
+  let (model, setup) = (g.m.model, g.m.setup)
   proc argType(a: Arg): NimNode =
     let blk = newStmtList(
-      nnkVarSection.newTree(newIdentDefs(used(modelId), newEmptyNode(), m.model)),
-      m.setup.copyNimTree,
+      nnkVarSection.newTree(newIdentDefs(used(modelId), newEmptyNode(), model)),
+      setup.copyNimTree,
       newCall(bindSym"drawFrom", newCall(ident"default", ident"ChoiceSource"),
               newCall(bindSym"hoist", a.source.copyNimTree)))
     newCall(ident"typeof", nnkPar.newTree(nnkBlockStmt.newTree(newEmptyNode(), blk)))
-
-  # Each argument type gets a concrete alias: a `typeof` used directly as a
-  # parameter type stays unresolved during overload resolution.
-  var aliases = nnkTypeSection.newTree()
-  var argTypes: seq[seq[NimNode]]
-  for cmd in m.commands:
+  result = nnkTypeSection.newTree()
+  for cmd in g.m.commands:
     var row: seq[NimNode]
     for i, a in cmd.args:
-      let t = genSym(nskType, mName & "_" & $cmd.name & "_" & $i)
-      aliases.add nnkTypeDef.newTree(t, newEmptyNode(), argType(a))
+      let t = genSym(nskType, g.mName & "_" & $cmd.name & "_" & $i)
+      result.add nnkTypeDef.newTree(t, newEmptyNode(), argType(a))
       row.add t
-    argTypes.add row
-  if aliases.len > 0: result.add aliases
+    g.argTypes.add row
 
-  # type <Name>* = object; <Name>StepKind* {.pure.} = enum ...; <Name>Step* = object ...
+proc stepTypes(g: Gen): NimNode =
+  ## type <Name>* = object; <Name>StepKind* {.pure.} = enum ...; <Name>Step* = object ...
   var kinds = nnkEnumTy.newTree(newEmptyNode())
-  var recCase = nnkRecCase.newTree(newIdentDefs(postfix(ident"kind", "*"), kindT))
-  for ci, cmd in m.commands:
+  var recCase = nnkRecCase.newTree(newIdentDefs(postfix(ident"kind", "*"), g.kindT))
+  for ci, cmd in g.m.commands:
     kinds.add cmd.name
     var fields = nnkRecList.newTree()
     for i, a in cmd.args:
-      fields.add newIdentDefs(postfix(field(cmd, i), "*"), argTypes[ci][i])
+      fields.add newIdentDefs(postfix(field(cmd, i), "*"), g.argTypes[ci][i])
     if fields.len == 0: fields.add newNilLit()
-    recCase.add nnkOfBranch.newTree(newDotExpr(kindT, cmd.name), fields)
-  result.add nnkTypeSection.newTree(
-    nnkTypeDef.newTree(postfix(m.name, "*"), newEmptyNode(),
+    recCase.add nnkOfBranch.newTree(newDotExpr(g.kindT, cmd.name), fields)
+  nnkTypeSection.newTree(
+    nnkTypeDef.newTree(postfix(g.m.name, "*"), newEmptyNode(),
       nnkObjectTy.newTree(newEmptyNode(), newEmptyNode(), newEmptyNode())),
     nnkTypeDef.newTree(
-      nnkPragmaExpr.newTree(postfix(kindT, "*"), nnkPragma.newTree(ident"pure")),
+      nnkPragmaExpr.newTree(postfix(g.kindT, "*"), nnkPragma.newTree(ident"pure")),
       newEmptyNode(), kinds),
-    nnkTypeDef.newTree(postfix(stepT, "*"), newEmptyNode(),
+    nnkTypeDef.newTree(postfix(g.stepT, "*"), newEmptyNode(),
       nnkObjectTy.newTree(newEmptyNode(), newEmptyNode(), nnkRecList.newTree(recCase))))
 
-  # Constructors: proc push*(_: typedesc[M]; x: T): MStep
-  for ci, cmd in m.commands:
-    var params = @[stepT, newIdentDefs(ident"_", nnkBracketExpr.newTree(ident"typedesc", m.name))]
-    var ctor = nnkObjConstr.newTree(stepT, newColonExpr(ident"kind", newDotExpr(kindT, cmd.name)))
+proc constructors(g: Gen): NimNode =
+  ## proc push*(_: typedesc[M]; x: T): MStep
+  result = newStmtList()
+  for ci, cmd in g.m.commands:
+    var params = @[g.stepT, newIdentDefs(ident"_", nnkBracketExpr.newTree(ident"typedesc", g.m.name))]
+    var ctor = nnkObjConstr.newTree(g.stepT, newColonExpr(ident"kind", newDotExpr(g.kindT, cmd.name)))
     for i, a in cmd.args:
-      params.add newIdentDefs(a.name, argTypes[ci][i])
+      params.add newIdentDefs(a.name, g.argTypes[ci][i])
       ctor.add newColonExpr(field(cmd, i), a.name)
     result.add newProc(postfix(cmd.name, "*"), params, newStmtList(ctor))
 
-  # Failure database key (ADR-0014): machine name, file and a hash of its code.
-  let keyLit = newLit(mName & "@" & extractFilename(name.lineInfoObj.filename) & "#" &
+proc machineKey(g: Gen; name, body: NimNode): NimNode =
+  ## Failure database key (ADR-0014): machine name, file and a hash of its code.
+  let keyLit = newLit(g.mName & "@" & extractFilename(name.lineInfoObj.filename) & "#" &
                       toHex(fnv1a64(body.repr)))
-  result.add newProc(postfix(ident"stateMachineKey", "*"),
-    [ident"string", newIdentDefs(ident"_", nnkBracketExpr.newTree(ident"typedesc", m.name))],
+  newProc(postfix(ident"stateMachineKey", "*"),
+    [ident"string", newIdentDefs(ident"_", nnkBracketExpr.newTree(ident"typedesc", g.m.name))],
     newStmtList(keyLit))
 
-  # `$` of a step as a Nim call: push(3)
+proc stepCode(g: Gen): NimNode =
+  ## `$` of a step as a Nim call: push(3)
   let stepVar = ident"step"
   var codeCase = nnkCaseStmt.newTree(newDotExpr(stepVar, ident"kind"))
-  for cmd in m.commands:
+  for cmd in g.m.commands:
     var e = newLit($cmd.name & "(")
     for i in 0 ..< cmd.args.len:
       if i > 0: e = infix(e, "&", newLit(", "))
       e = infix(e, "&", newCall(bindSym"showCode", newDotExpr(stepVar, field(cmd, i))))
     e = infix(e, "&", newLit(")"))
-    codeCase.add nnkOfBranch.newTree(newDotExpr(kindT, cmd.name), newStmtList(e))
-  result.add newProc(postfix(ident"stepCode", "*"),
-    [ident"string", newIdentDefs(stepVar, stepT)], newStmtList(codeCase))
+    codeCase.add nnkOfBranch.newTree(newDotExpr(g.kindT, cmd.name), newStmtList(e))
+  newProc(postfix(ident"stepCode", "*"),
+    [ident"string", newIdentDefs(stepVar, g.stepT)], newStmtList(codeCase))
 
-  # The runner.
-  let src = genSym(nskParam, "src")
-  let steps = genSym(nskParam, "steps")
-  let replay = genSym(nskParam, "replay")
-  let maxSteps = genSym(nskParam, "maxSteps")
-  let swarm = genSym(nskParam, "swarm")
-  let many = genSym(nskVar, "many")
-  let idx = genSym(nskVar, "idx")
-  let enabled = genSym(nskVar, "enabled")
-  let n = genSym(nskVar, "n")
-  let ok = genSym(nskVar, "ok")
-  let cur = genSym(nskVar, "cur")
-  var hoists = newStmtList()
-  var hoistSyms: seq[seq[NimNode]]
-  for cmd in m.commands:
+proc hoistArgs(g: Gen; hoists: NimNode): seq[seq[NimNode]] =
+  ## Hoisted argument generators, built once per runner; nil where not hoisted.
+  for cmd in g.m.commands:
     var row: seq[NimNode]
     for a in cmd.args:
       if a.hoisted:
-        let g = genSym(nskLet, $cmd.name & "_" & $a.name)
-        hoists.add newLetStmt(g, newCall(bindSym"hoist", a.source))
-        row.add g
+        let s = genSym(nskLet, $cmd.name & "_" & $a.name)
+        hoists.add newLetStmt(s, newCall(bindSym"hoist", a.source))
+        row.add s
       else:
         row.add nil
-    hoistSyms.add row
+    result.add row
 
-  let nCmd = m.commands.len
-  var slot = 2 * nCmd          # user labels after commands and disabled counts
-  let allowed = genSym(nskVar, "allowed")
-  let enabledAll = genSym(nskVar, "enabledAll")
-  let nAll = genSym(nskVar, "nAll")
-  var registerAll = newStmtList()
-  var enable = newStmtList()
-  var drawCase = nnkCaseStmt.newTree(nnkBracketExpr.newTree(enabled,
-    newCall(bindSym"drawIndex", src, n)))
-  var execCase = nnkCaseStmt.newTree(newDotExpr(cur, ident"kind"))
-  for ci, cmd in m.commands:
-    let kindVal = newDotExpr(kindT, cmd.name)
+proc commandBranches(g: Gen; s: RunnerSyms; hoistSyms: seq[seq[NimNode]];
+                     slot: var int): tuple[registerAll, enable, drawCase, execCase: NimNode] =
+  ## Per command: its label registration, its enabling by precondition (and
+  ## swarm), the drawing of its arguments, and its execution.
+  let src = s.src
+  let nCmd = g.m.commands.len
+  result.registerAll = newStmtList()
+  result.enable = newStmtList()
+  result.drawCase = nnkCaseStmt.newTree(nnkBracketExpr.newTree(s.enabled,
+    newCall(bindSym"drawIndex", src, s.n)))
+  result.execCase = nnkCaseStmt.newTree(newDotExpr(s.cur, ident"kind"))
+  for ci, cmd in g.m.commands:
+    let kindVal = newDotExpr(g.kindT, cmd.name)
     let pre = if cmd.precondition.isNil: newLit(true) else: cmd.precondition
     let ciLit = newLit(ci)
     let disabledSlot = newLit(nCmd + ci)
     let cmdName = newLit($cmd.name)
-    registerAll.add quote do:
+    let (enabledAll, nAll, allowed, enabled, n, replay) =
+      (s.enabledAll, s.nAll, s.allowed, s.enabled, s.n, s.replay)
+    result.registerAll.add quote do:
       recordLabel(`src`, `ciLit`, false, `cmdName`, lkCommand)
-    enable.add quote do:
+    result.enable.add quote do:
       if `pre`:
         `enabledAll`[`nAll`] = `kindVal`
         inc `nAll`
@@ -331,23 +332,23 @@ macro stateMachine*(name, body: untyped): untyped =
         recordLabel(`src`, `disabledSlot`, true, `cmdName`, lkDisabled)
     # Draw the arguments, then build the step.
     var draw = newStmtList()
-    var ctor = nnkObjConstr.newTree(stepT, newColonExpr(ident"kind", kindVal))
+    var ctor = nnkObjConstr.newTree(g.stepT, newColonExpr(ident"kind", kindVal))
     for i, a in cmd.args:
       let v = genSym(nskLet, $a.name)
-      let g = if hoistSyms[ci][i] != nil: hoistSyms[ci][i]
-              else: newCall(bindSym"hoist", a.source)
-      draw.add newLetStmt(v, newCall(bindSym"drawFrom", src, g))
+      let gen = if hoistSyms[ci][i] != nil: hoistSyms[ci][i]
+                else: newCall(bindSym"hoist", a.source)
+      draw.add newLetStmt(v, newCall(bindSym"drawFrom", src, gen))
       ctor.add newColonExpr(field(cmd, i), v)
-    draw.add newAssignment(cur, ctor)
+    draw.add newAssignment(s.cur, ctor)
     draw.add newCall(bindSym"recordLabel", src, newLit(ci), newLit(true), newLit($cmd.name),
                      bindSym"lkCommand")
-    drawCase.add nnkOfBranch.newTree(kindVal, draw)
+    result.drawCase.add nnkOfBranch.newTree(kindVal, draw)
     # Execute it.
     var exec = newStmtList()
     for i, a in cmd.args:
       exec.add nnkLetSection.newTree(newIdentDefs(used(a.name), newEmptyNode(),
-        newDotExpr(cur, field(cmd, i))))
-    let run = rewriteChecks(rewriteLabels(cmd.run, src, slot), propCheckSym)
+        newDotExpr(s.cur, field(cmd, i))))
+    let run = rewriteChecks(rewriteLabels(cmd.run, src, slot), g.propCheckSym)
     if cmd.postcondition.isNil:
       exec.add run
     else:
@@ -360,29 +361,49 @@ macro stateMachine*(name, body: untyped): untyped =
                                  ident"off"))
       exec.add nnkLetSection.newTree(newIdentDefs(used(ident"result"), newEmptyNode(), value))
       exec.add nnkPragma.newTree(ident"pop")
-      exec.add asChecks(rewriteLabels(cmd.postcondition, src, slot), propCheckSym)
+      exec.add asChecks(rewriteLabels(cmd.postcondition, src, slot), g.propCheckSym)
     if not cmd.update.isNil:
-      exec.add rewriteChecks(rewriteLabels(cmd.update, src, slot), propCheckSym)
-    execCase.add nnkOfBranch.newTree(kindVal, newBlockStmt(exec))
+      exec.add rewriteChecks(rewriteLabels(cmd.update, src, slot), g.propCheckSym)
+    result.execCase.add nnkOfBranch.newTree(kindVal, newBlockStmt(exec))
 
-  let invariant = if m.invariant.len == 0: newStmtList()
-                  else: asChecks(rewriteLabels(m.invariant, src, slot), propCheckSym)
-  let teardown = if m.teardown.len == 0: newStmtList(nnkDiscardStmt.newTree(newEmptyNode()))
-                 else: rewriteChecks(m.teardown, propCheckSym)
-  let setup = rewriteChecks(m.setup, propCheckSym)
-  let modelExpr = m.model
-  let nameLit = newLit(mName)
+proc runner(g: Gen; name, body: NimNode): NimNode =
+  ## proc stateMachineRunner*(_: typedesc[M]): StateRunner[MStep]: generates
+  ## (or replays) one command sequence and runs it against a fresh system.
+  let s = RunnerSyms(
+    src: genSym(nskParam, "src"), steps: genSym(nskParam, "steps"),
+    replay: genSym(nskParam, "replay"), maxSteps: genSym(nskParam, "maxSteps"),
+    swarm: genSym(nskParam, "swarm"), many: genSym(nskVar, "many"),
+    idx: genSym(nskVar, "idx"), enabled: genSym(nskVar, "enabled"),
+    n: genSym(nskVar, "n"), ok: genSym(nskVar, "ok"), cur: genSym(nskVar, "cur"),
+    allowed: genSym(nskVar, "allowed"), enabledAll: genSym(nskVar, "enabledAll"),
+    nAll: genSym(nskVar, "nAll"))
+  let (src, steps, replay, maxSteps, swarm) = (s.src, s.steps, s.replay, s.maxSteps, s.swarm)
+  let (many, idx, enabled, n, ok, cur) = (s.many, s.idx, s.enabled, s.n, s.ok, s.cur)
+  let (allowed, enabledAll, nAll) = (s.allowed, s.enabledAll, s.nAll)
+  var hoists = newStmtList()
+  let hoistSyms = g.hoistArgs(hoists)
+  var slot = 2 * g.m.commands.len   # user labels after commands and disabled counts
+  let (registerAll, enable, drawCase, execCase) = g.commandBranches(s, hoistSyms, slot)
+
+  let invariant = if g.m.invariant.len == 0: newStmtList()
+                  else: asChecks(rewriteLabels(g.m.invariant, src, slot), g.propCheckSym)
+  let teardown = if g.m.teardown.len == 0: newStmtList(nnkDiscardStmt.newTree(newEmptyNode()))
+                 else: rewriteChecks(g.m.teardown, g.propCheckSym)
+  let setup = rewriteChecks(g.m.setup, g.propCheckSym)
+  let nameLit = newLit(g.mName)
   let mined = genSym(nskLet, "hints")
   let bodyAcc = genSym(nskVar, "bodyHints")
   hoists.add bodyHints(body, bodyAcc)
   let fileHints = genSym(nskLet, "fileHints")
   hoists.add newLetStmt(mined, bodyAcc)
   hoists.add newLetStmt(fileHints, prefix(minedHints(name), "@"))
-  let nCommands = newLit(m.commands.len)
-  let modelDecl = nnkVarSection.newTree(newIdentDefs(used(modelId), newEmptyNode(), modelExpr))
+  let nCommands = newLit(g.m.commands.len)
+  let modelDecl = nnkVarSection.newTree(newIdentDefs(used(ident"model"), newEmptyNode(), g.m.model))
   let stepCodeId = ident"stepCode"
+  let kindT = g.kindT
+  let stepT = g.stepT
 
-  let body = quote do:
+  let runBody = quote do:
     if not `replay`:
       beginBody(`src`)
       if `src`.recordInputs: `src`.machine = `nameLit`
@@ -442,11 +463,26 @@ macro stateMachine*(name, body: untyped): untyped =
      newIdentDefs(steps, nnkBracketExpr.newTree(ident"seq", stepT)),
      newIdentDefs(replay, ident"bool"), newIdentDefs(maxSteps, ident"int"),
      newIdentDefs(swarm, ident"bool")],
-    body, nnkLambda)
+    runBody, nnkLambda)
   let runnerT = nnkBracketExpr.newTree(bindSym"StateRunner", stepT)
-  result.add newProc(postfix(ident"stateMachineRunner", "*"),
-    [runnerT, newIdentDefs(ident"_", nnkBracketExpr.newTree(ident"typedesc", m.name))],
+  newProc(postfix(ident"stateMachineRunner", "*"),
+    [runnerT, newIdentDefs(ident"_", nnkBracketExpr.newTree(ident"typedesc", g.m.name))],
     newStmtList(hoists, newAssignment(ident"result", runnerProc)))
+
+macro stateMachine*(name, body: untyped): untyped =
+  ## Defines a state machine at module level; see ADR-0011 and the stateful
+  ## testing tutorial.
+  let m = parseMachine(name, body)
+  var g = Gen(m: m, mName: $m.name, stepT: ident($m.name & "Step"),
+              kindT: ident($m.name & "StepKind"), propCheckSym: bindSym"propCheck")
+  result = newStmtList()
+  let aliases = g.argTypeAliases()
+  if aliases.len > 0: result.add aliases
+  result.add g.stepTypes()
+  result.add g.constructors()
+  result.add g.machineKey(name, body)
+  result.add g.stepCode()
+  result.add g.runner(name, body)
 
 macro replayCommands*(machine, body: untyped): untyped =
   ## Runs the given steps, as printed in a stateful failure report (M4):
