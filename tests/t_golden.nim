@@ -9,7 +9,8 @@ const snapshotFile = currentSourcePath().parentDir / "golden" / "snapshot.txt"
 
 suite "golden snapshot":
   test "RL15/Q7: a seed generates, explores and shrinks exactly as recorded":
-    let expected = readFile(snapshotFile)
+    # Normalised: a Windows checkout with core.autocrlf turns \n into \r\n.
+    let expected = readFile(snapshotFile).replace("\r\n", "\n")
     let actual = snapshot()
     if actual != expected:
       let a = actual.splitLines
