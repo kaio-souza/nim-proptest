@@ -1,0 +1,50 @@
+name: API docs
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Official Nim image pinned by version, same as CI: no third-party actions.
+    container: nimlang/nim:2.2.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Allow git in the container workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Generate API documentation (Q4)
+        run: |
+          nim doc --project --index:on --outdir:htmldocs \
+            --git.url:https://github.com/${{ github.repository }} \
+            --git.commit:${{ github.sha }} \
+            src/proptest.nim
+          # Pages serves index.html at the root.
+          cp htmldocs/proptest.html htmldocs/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: htmldocs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
