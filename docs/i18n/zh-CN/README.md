@@ -344,7 +344,7 @@ test "queue matches its model":
 - PRNG 和哈希与其作者的 C 参考实现以及 FNV-1a 官方测试向量一致（golden 测试）。
 - 值测试：[SPEC](../../SPEC.md) 中的每个参考 bug 都收缩到其精确的最小反例；两个相互独立的 bug 都会被报告，收缩也不会从一个 bug 滑到另一个（在 20 个种子上验证）。
 - CI 中的确定性门禁：收缩每个参考 bug 需要 9 到 236 次执行（基线见 `benchmarks/baseline/shrink.json`）；埋入的 bug 必须在不少于基线的种子数上被找到（`benchmarks/baseline/find.json`）；抽取选择和执行有状态步骤从不分配内存，并有测试对静态标签做同样的检查。
-- 第一个外部使用者：[`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) 的模型测试对其熔断器运行 1000 个随机序列。
+- 第一个外部使用者：[`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-break) 的模型测试对其熔断器运行 1000 个随机序列。
 - 每条需求在 [`TRACEABILITY.md`](../../TRACEABILITY.md) 中都有一行，由 `nimble trace` 校验。设计决策：[`decisions/`](../../decisions/README.md)。
 
 ```sh

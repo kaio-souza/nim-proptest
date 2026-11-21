@@ -340,7 +340,7 @@ Time is a command (`command advance(ms in ints(0, 2000))` moving a fake clock), 
 - The PRNG and hash match the authors' reference C implementations and the official FNV-1a vectors (golden tests).
 - Value tests: each reference bug of the [SPEC](docs/SPEC.md) shrinks to its exact minimal counterexample; two independent bugs are both reported, and shrinking never slips from one bug to another (checked on 20 seeds).
 - Deterministic gates in CI: shrinking each reference bug takes 9 to 236 executions (baseline in `benchmarks/baseline/shrink.json`); planted bugs must keep being found on as many seeds as the baseline (`benchmarks/baseline/find.json`); drawing choices and running stateful steps never allocate, and a test checks the same for static labels.
-- First external user: the [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) model test runs 1000 random sequences against its breaker.
+- First external user: the [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-break) model test runs 1000 random sequences against its breaker.
 - Every requirement has a row in [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md), checked by `nimble trace`. Design decisions: [`docs/decisions/`](docs/decisions/README.md).
 
 ```sh

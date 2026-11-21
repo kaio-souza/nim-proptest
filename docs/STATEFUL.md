@@ -187,7 +187,7 @@ Three steps are enough to see which rule is off. Decide which side matches the s
 - **Swarm testing is on.** Half of the sequences leave some commands out, so long runs of the others (many increments with no reset) become likely. `initSettings(swarm = false)` turns it off.
 - **Check what the user observes**: returned values in postconditions, visible state in invariants. Do not check private fields.
 - **Expected errors are values.** If the system raises on a rejected call, catch it inside `run:` and return something the model predicts (`"rejected"`). Any exception that escapes `run:` is a failure.
-- **A real example**: [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) tests its breaker this way (`tests/t_model.nim`), with backoff, `successThreshold` and its `FakeClock`, over 1000 sequences.
+- **A real example**: [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-break) tests its breaker this way (`tests/t_model.nim`), with backoff, `successThreshold` and its `FakeClock`, over 1000 sequences.
 
 ## Limits
 

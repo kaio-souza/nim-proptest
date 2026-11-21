@@ -191,7 +191,7 @@ Failure 2 of 2 (PropertyFailed at stateful.nim:97)
 - **swarm testing 默认开启。** 一半的序列会省略部分命令，于是其余命令的长串连续执行（多次递增且没有重置）变得很可能。`initSettings(swarm = false)` 可将其关闭。
 - **检查用户能观察到的东西**：后置条件中的返回值，不变量中的可见状态。不要检查私有字段。
 - **预期内的错误是值。** 如果系统在拒绝调用时抛出异常，就在 `run:` 内捕获它，并返回模型能预测的东西（`"rejected"`）。任何从 `run:` 中逃逸的异常都是失败。
-- **一个真实例子**：[`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) 就是这样测试它的熔断器的（`tests/t_model.nim`），包括退避、`successThreshold` 和它的 `FakeClock`，共 1000 个序列。
+- **一个真实例子**：[`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-break) 就是这样测试它的熔断器的（`tests/t_model.nim`），包括退避、`successThreshold` 和它的 `FakeClock`，共 1000 个序列。
 
 ## 限制
 

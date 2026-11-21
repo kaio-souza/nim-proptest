@@ -191,7 +191,7 @@ Três passos bastam para ver qual regra está errada. Decida qual lado bate com 
 - **O swarm testing está ligado.** Metade das sequências deixa alguns comandos de fora, então longas sequências dos outros (muitos incrementos sem reset) ficam prováveis. `initSettings(swarm = false)` o desliga.
 - **Verifique o que o usuário observa**: valores retornados nas pós-condições, estado visível nos invariantes. Não verifique campos privados.
 - **Erros esperados são valores.** Se o sistema lança exceção numa chamada rejeitada, capture-a dentro de `run:` e retorne algo que o modelo prevê (`"rejected"`). Qualquer exceção que escapa de `run:` é uma falha.
-- **Um exemplo real**: [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) testa seu breaker assim (`tests/t_model.nim`), com backoff, `successThreshold` e seu `FakeClock`, em 1000 sequências.
+- **Um exemplo real**: [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-break) testa seu breaker assim (`tests/t_model.nim`), com backoff, `successThreshold` e seu `FakeClock`, em 1000 sequências.
 
 ## Limites
 

@@ -344,7 +344,7 @@ El tiempo es un comando (`command advance(ms in ints(0, 2000))` que mueve un rel
 - El PRNG y el hash coinciden con las implementaciones de referencia en C de sus autores y con los vectores oficiales de FNV-1a (golden tests).
 - Pruebas de valor: cada bug de referencia de la [SPEC](../../SPEC.md) se reduce a su contraejemplo mínimo exacto; dos bugs independientes se informan ambos, y la reducción nunca salta de un bug a otro (comprobado en 20 semillas).
 - Puertas deterministas en CI: reducir cada bug de referencia lleva de 9 a 236 ejecuciones (línea base en `benchmarks/baseline/shrink.json`); los bugs plantados deben seguir encontrándose en tantas semillas como en la línea base (`benchmarks/baseline/find.json`); sortear elecciones y ejecutar pasos con estado nunca reserva memoria, y una prueba comprueba lo mismo para las etiquetas estáticas.
-- Primer usuario externo: la prueba de modelo de [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) ejecuta 1000 secuencias aleatorias contra su breaker.
+- Primer usuario externo: la prueba de modelo de [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-break) ejecuta 1000 secuencias aleatorias contra su breaker.
 - Cada requisito tiene una fila en [`TRACEABILITY.md`](../../TRACEABILITY.md), comprobada por `nimble trace`. Decisiones de diseño: [`decisions/`](../../decisions/README.md).
 
 ```sh
