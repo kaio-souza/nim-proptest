@@ -2,7 +2,7 @@
 
 What you can rely on between versions of proptest, what may change, and how each change is announced. Requirement RL15; enforced by golden tests (Q7); reasons in [ADR-0015](decisions/0015-stability-policy.md).
 
-**In short:** within a minor version (0.4.0, 0.4.1, 0.4.2, ...) the same seed produces the same values, the same exploration and the same counterexample. Changes to any of that happen only in a new minor version, and every one is listed in the CHANGELOG under **Generation changes**.
+**In short:** within a minor version (1.0.0, 1.0.1, 1.0.2, ...) the same seed produces the same values, the same exploration and the same counterexample. Changes to any of that happen only in a new minor version, and every one is listed in the CHANGELOG under **Generation changes**.
 
 ## Why it matters to you
 
@@ -54,10 +54,10 @@ Every release's CHANGELOG entry groups changes by kind:
 | Heading | Contains | Allowed in |
 |---|---|---|
 | **Added**, **Fixed**, **Changed** | new API, bug fixes, report or documentation changes | any release |
-| **Generation changes** | anything in [What stays the same](#what-stays-the-same-within-a-minor-version): values, exploration, shrinking, file formats | a minor release (0.x.0; after 1.0, x.y.0) |
-| **Breaking** | API changes that make code stop compiling or change meaning | before 1.0: a minor release; after 1.0: a major release |
+| **Generation changes** | anything in [What stays the same](#what-stays-the-same-within-a-minor-version): values, exploration, shrinking, file formats | a minor release (x.y.0) |
+| **Breaking** | API changes that make code stop compiling or change meaning | a major release (x.0.0) |
 
-A **Generation changes** entry says what changes, for which generators or settings, and whether saved seeds and failure database entries still replay. Generation changes are batched: several land together in one minor release, so seeds stop replaying once rather than after each improvement ([ROADMAP](ROADMAP.md#4-generation-changes-together)).
+A **Generation changes** entry says what changes, for which generators or settings, and whether saved seeds and failure database entries still replay. Generation changes are batched: several land together in one minor release, so seeds stop replaying once rather than after each improvement.
 
 A **Breaking** API change is preceded, when possible, by a `{.deprecated.}` version of the old API for at least one minor release, with a message naming the replacement.
 
@@ -65,8 +65,8 @@ A bug fix that changes values (a generator that could never produce some value i
 
 ## When you upgrade
 
-- **Patch release (0.4.1 → 0.4.2):** nothing to do. Seeds, pinned tests and saved failures keep working.
-- **Minor release (0.4 → 0.5):** read **Generation changes**. Seeds printed by the old version replay other inputs: replay old CI failures with the old version. Properties with a fixed `seed` now check other inputs, which is usually fine; review any test that asserts on the exact values a seed produces. The failure database needs nothing: entries that no longer fit the generators are dropped, entries that now pass are forgotten after three runs, and a real bug still fails.
+- **Patch release (1.0.1 → 1.0.2):** nothing to do. Seeds, pinned tests and saved failures keep working.
+- **Minor release (1.0 → 1.1):** read **Generation changes**. Seeds printed by the old version replay other inputs: replay old CI failures with the old version. Properties with a fixed `seed` now check other inputs, which is usually fine; review any test that asserts on the exact values a seed produces. The failure database needs nothing: entries that no longer fit the generators are dropped, entries that now pass are forgotten after three runs, and a real bug still fails.
 - **To keep a specific input forever**, do not rely on a seed: write it down with `example(...)` or, for state machines, paste the `replayCommands` block into a test. Those do not depend on generation at all.
 
 ## How it is enforced

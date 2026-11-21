@@ -95,7 +95,7 @@ forAll(price in prices, user in usernames, l in labels): ...
 | `ints(lo, hi, near = [...])` | integers; `near` lists boundaries of your domain to try often |
 | `frequency([(w, g), ...])` | one of the generators, by weight |
 | `elements([...])`, `oneOf(...)`, `constant(v)` | fixed choices |
-| `strings(alphabet, ...)`, `alphanumeric`, `identifiers(...)`, `unicodeStrings(...)` | text, including valid UTF-8 over every plane |
+| `strings(alphabet, ...)` (e.g. `strings(alphanumeric, ...)`), `identifiers(...)`, `unicodeStrings(...)` | text, including valid UTF-8 over every plane |
 | `seqs`, `tables`, `hashSets`, `optionals` | containers of generated values |
 | `uniqueSeqs(g, ...)`, `sortedSeqs(g, ...)` | sequences of distinct values, or in ascending order |
 | `sized(proc(n: int): Gen[T] = ...)`, `g.resize(n)` | a generator that depends on the current size, or a fixed size |

@@ -1,6 +1,6 @@
 # Architecture
 
-Ties the ADRs into one picture of how a property runs. Modules marked *(planned)* do not exist yet.
+Ties the ADRs into one picture of how a property runs.
 
 ## Glossary
 
@@ -53,7 +53,7 @@ Every generator is built from these `ChoiceSource` procs; each records one choic
 | `drawBool(p)` | 0 or 1 | `false` |
 | `drawIndex(n)` | `0 ..< n`, uniform | first element |
 | `drawMagnitude(max)` | `0 .. max`, biased to small values and boundaries while exploring | 0 |
-| `drawInt(lo, hi)` | optional sign choice + magnitude from the value closest to 0 | value closest to 0, positive before negative |
+| `drawInt(lo, hi)` | one choice: the distance from the value closest to 0, zigzagged (0, +1, -1, +2, ...) when the range crosses it | value closest to 0, positive before negative |
 | `drawFloat` / `drawFloatRange` | kind (finite or special), sign, whole part, fraction, scale | 0.0 |
 | `initMany` + `more` | one "continue" choice per optional element; each element recorded as a span | empty collection |
 
@@ -67,8 +67,11 @@ forAll(...)
   ├─ write run seed to .proptest/last-run                  (crash breadcrumbs)
   ├─ run explicit examples                                       (R4)
   ├─ replay saved sequences from the failure database           (R3)
+  ├─ start the watchdog, if `hangTimeout` is set                    (RL10)
   └─ for each of `cases` cases (continuing after a failure, until maxFailures distinct):
-       ├─ choice source records draws from the PRNG (size grows over the run)
+       ├─ choice source records draws from the PRNG (size grows over the run,
+       │    discarded cases included); after half of the cases, every other case
+       │    extends the best case of a `target` score instead      (ADR-0016)
        ├─ generators build the inputs (overrun → invalid case)
        ├─ run the body (assertions raise, exceptions caught)
        ├─ ok / discarded (assume) / failed (signature) / generator error
@@ -77,7 +80,7 @@ forAll(...)
           generation time sampled on 1 case in 8 (warnings)
   coverage: `cover` requirements confidently missed → psInsufficientCoverage
   on failure, for each distinct signature (up to the limit):
-       ├─ shrink the sequence: delete spans (elements, steps), delete chunks, zero,
+       ├─ shrink the sequence (not for explicit examples: they draw no choices): delete spans (elements, steps), delete chunks, zero,
        │    lower (binary search), then merge
        │    accept candidate only if smaller in shortlex AND same signature
        ├─ re-run the minimal sequence twice: fails both times → counterexample; otherwise → flaky
@@ -120,11 +123,17 @@ tests/
   golden.nim           # builds the snapshot; golden_mined.nim: its mined-constants property
   golden/snapshot.txt  # the committed snapshot; rewritten by `nimble golden`
   t_values.nim         # SPEC Part IV reference bugs and their exact minima (V-*)
+  t_stateful.nim       # state machines: commands, shrinking of sequences, replayCommands (M*)
+  t_derive.nim         # derived generators: objects, case objects, ref and recursive types, tables, strings (G4–G6, C3, C4)
+  t_find.nim           # bug-finding: edge bias, hints, swarm, labels, targets, deadlines, budgets, health checks (D*, G8, RL8, RL11, PF8, S4)
+  t_database.nim       # failure database and explicit examples (R3, R4, RL12)
   fixtures/            # small programs compiled and run by t_integration
 benchmarks/
   harness.nim          # warm-up, 30 samples, median/p95/p99, allocations
   b_gen.nim            # cost per choice / value / case vs. a hand-written loop; allocation gate
   b_shrink.nim         # executions per reference bug; gate against baseline/shrink.json
+  b_find.nim           # detection rate of planted bugs on 100 seeds; gate against baseline/find.json
+  b_compile.nim        # compile time of properties over derived types (PF9)
 scripts/
   check_traceability.nim   # TRACEABILITY.md against the tests (ADR-0004)
   check_docs.nim           # CONFIGURATION.md against the code; heading links in every doc

@@ -1,8 +1,7 @@
 # Requirements specification
 
-`proptest` is a property-based testing library for the Nim programming language, distributed as a Nimble package. Status: **design phase**. Nothing here is implemented yet. Each requirement has an ID used in issues, test names and benchmarks. Priorities: **P0** mandatory for the first release, **P1** expected from a mature library, **P2** differentiator.
+`proptest` is a property-based testing library for the Nim programming language, distributed as a Nimble package. Each requirement has an ID used in test names, benchmarks and ADRs; its status and evidence are in [`TRACEABILITY.md`](TRACEABILITY.md). Priorities: **P0** essential, **P1** expected from a mature library.
 
-- Delivery order: [`ROADMAP.md`](ROADMAP.md).
 - Rationale for the main choices: [`decisions/`](decisions/README.md).
 
 ---
@@ -25,7 +24,7 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 
 ## 3. Non-goals
 
-- Coverage-guided fuzzing engine. A bridge to existing fuzzers is a P2 item (F1); the engine itself is out of scope.
+- Coverage-guided fuzzing.
 - Formal verification or symbolic execution.
 - A new test runner. The library plugs into existing runners.
 - Mutation testing.
@@ -112,7 +111,6 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 | M4 | P0 | The failure report prints the sequence as runnable Nim code, ready to paste as a regression test. |
 | M5 | P1 | Invariants checked after every command. |
 | M6 | P1 | Injectable time and side effects in the model (e.g. advancing a fake clock is a command). |
-| M7 | P2 | **Parallel state-machine testing**: run command sequences on several threads and check that the observed results are linearizable against the model. |
 
 ## 11. Statistics and coverage (D)
 
@@ -120,14 +118,13 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 |----|-----|-------------|
 | D1 | P1 | `classify` / `label`: tag cases and print the distribution at the end of the run. |
 | D2 | P1 | `cover(percent, cond, label)`: fail the property when a required class of inputs was generated too rarely. |
-| D3 | P2 | Summary of generated value sizes, to detect generators that never produce large inputs. |
 | D4 | P1 | **Targeted exploration**: `target(score, name)` in a property or state machine steers part of the exploration toward cases with higher scores, to reach deep states that random cases rarely reach; the best score per name is reported ([ADR-0016](decisions/0016-targeted-exploration.md)). |
 
 ## 11a. Output and reporting (O)
 
 | ID | Pri | Requirement |
 |----|-----|-------------|
-| O1 | P0 | **Quiet exploration**: the library prints nothing per case or per shrink step by default; only the final report. Output written by the property body itself is not captured: it appears once per execution, so the documentation steers it into `classify`/`label` and the `check` message instead. (Capturing the body's output during the final re-run and showing it inside the report was part of this requirement until 2026-11-20; it is deferred, see the ROADMAP.) |
+| O1 | P0 | **Quiet exploration**: the library prints nothing per case or per shrink step by default; only the final report. Output written by the property body itself is not captured: it appears once per execution, so the documentation steers it into `classify`/`label` and the `check` message instead. |
 | O2 | P1 | Verbosity levels: `quiet` (failures only), `normal` (default), `verbose` (every case), `debug` (every shrink step). |
 | O3 | P1 | Machine-readable report (JSON) for CI tooling, enabled by configuration or environment variable. |
 | O4 | P1 | The report includes the statistics (D1), coverage results (D2) and health-check warnings (RL11). |
@@ -140,7 +137,7 @@ As of 2026-11-19 the Nim package index (3 012 packages) has no property-based te
 | K2 | P1 | Global defaults through environment variables, so CI can run more cases than local development (e.g. `PROPTEST_CASES=10000`). |
 | K3 | P1 | Validation of settings with clear errors. |
 
-Planned environment variables (final names fixed in v0.1): `PROPTEST_SEED`, `PROPTEST_CASES`, `PROPTEST_MAX_SHRINKS`, `PROPTEST_DEADLINE`, `PROPTEST_DB` (path or `off`), `PROPTEST_VERBOSITY`, `PROPTEST_REPORT` (`text` or `json`).
+Environment variables and their defaults: [`CONFIGURATION.md`](CONFIGURATION.md).
 
 ## 13. Integration (I)
 
@@ -149,13 +146,11 @@ Planned environment variables (final names fixed in v0.1): `PROPTEST_SEED`, `PRO
 | I1 | P0 | Works inside `std/unittest` (`test` / `suite`). |
 | I2 | P1 | Works inside `unittest2` without making it a dependency ([ADR-0002](decisions/0002-zero-dependencies-runner-agnostic.md); no module turned out to be needed). |
 | I3 | P1 | Standalone use (no test framework): a property returns a result object. |
-| I4 | P2 | Async properties (`std/asyncdispatch`; Chronos in a separate module). |
 
 ## 14. Fuzzing bridge (F)
 
 | ID | Pri | Requirement |
 |----|-----|-------------|
-| F1 | P2 | Run the same property under a coverage-guided fuzzer: the fuzzer's bytes become the choice sequence, so generators and shrinking are reused unchanged. |
 
 ## 15. Reliability (RL)
 
@@ -163,7 +158,7 @@ A testing library is only useful if its failures can be trusted: every reported 
 
 | ID | Pri | Requirement |
 |----|-----|-------------|
-| RL1 | P0 | **Own, versioned PRNG**: the same seed produces the same choice stream on every Nim version, OS, 32/64-bit target and backend (C, C++, JS). `std/random` is never used for generation ([ADR-0005](decisions/0005-own-prng-and-stable-hashing.md)). |
+| RL1 | P0 | **Own, versioned PRNG**: the same seed produces the same choice stream on every Nim version, OS, 32/64-bit target and backend (C, C++). `std/random` is never used for generation ([ADR-0005](decisions/0005-own-prng-and-stable-hashing.md)). |
 | RL2 | P0 | **Stable hashing** for seed derivation and failure database keys, implemented in the library; `std/hashes` is never used for anything persisted or printed. |
 | RL3 | P0 | **Flaky detection**: the final counterexample is re-run twice before being reported; if either run passes, the property is reported as *flaky* with the observed outcomes, never as a normal failure ([ADR-0006](decisions/0006-failure-identity-and-flaky-detection.md)). |
 | RL4 | P0 | **Failure identity during shrinking**: a candidate only counts as "still failing" if it fails the same way (exception type and raise/check location). Shrinking never slips from one bug to another. |
@@ -187,7 +182,6 @@ Properties should be cheap enough to run on every save, next to unit tests. Init
 |----|-----|-------------|
 | PF1 | P0 | Benchmark suite: cost per choice drawn, per built-in generator, per-case overhead of `forAll`, and shrinking cost on the reference bugs. Baseline: an equivalent hand-written random loop with no library. |
 | PF2 | P1 | A default run (100 cases) of a simple property completes in milliseconds, **in debug builds**, which is how test suites usually run. Benchmarks are reported for debug and release. |
-| PF3 | P2 | Optional parallel execution of independent cases. |
 | PF4 | P0 | **No allocation per choice**: the choice buffer is preallocated and reused across cases and shrink attempts. |
 | PF5 | P1 | **Built-in generators without closures**: type-inferred generators (`forAll(xs in seq[int])`) are expanded at compile time into direct calls; closures are used only for user-built combinators ([ADR-0007](decisions/0007-generator-representation.md)). |
 | PF6 | P1 | **Efficient shrinking**: passes use binary/exponential search on values and span sizes instead of decrementing by one, and a cache of already tried sequences avoids re-running duplicates. |
@@ -196,7 +190,7 @@ Properties should be cheap enough to run on every save, next to unit tests. Init
 | PF9 | P1 | **Compile-time cost**: a benchmark measures the compile time of a test file with 50 properties and derived object generators, with a budget. |
 | PF10 | P1 | **Lazy formatting**: values are converted to strings only for the final report; `classify` with static labels does not allocate per case. |
 
-Targets (release / debug; measured values in [`ROADMAP.md`](ROADMAP.md#performance-against-the-targets)): drawing one choice < 5 ns / < 50 ns; generating an `int` < 30 ns / < 150 ns; per-case overhead excluding the body < 200 ns / < 1 µs; each reference bug shrunk to its minimal counterexample in < 500 property executions. Calibrated on 2026-11-20 from the first targets (one choice < 20 ns in debug; an `int` < 10 / < 40 ns), which assumed a uniform draw: a uniform 64-bit draw costs about 3 ns, but the distribution that finds boundary bugs (edges, sizes, hints) costs about 20 ns in release, and debug builds pay for Nim's runtime checks in the caller's code. The per-case targets, which decide how fast a suite runs, are unchanged and met.
+Targets (release / debug; measured with `nimble bench`): drawing one choice < 5 ns / < 50 ns; generating an `int` < 30 ns / < 150 ns; per-case overhead excluding the body < 200 ns / < 1 µs; each reference bug shrunk to its minimal counterexample in < 500 property executions. Calibrated on 2026-11-20 from the first targets (one choice < 20 ns in debug; an `int` < 10 / < 40 ns), which assumed a uniform draw: a uniform 64-bit draw costs about 3 ns, but the distribution that finds boundary bugs (edges, sizes, hints) costs about 20 ns in release, and debug builds pay for Nim's runtime checks in the caller's code. The per-case targets, which decide how fast a suite runs, are unchanged and met.
 
 ## 17. Portability and quality (Q)
 
@@ -204,7 +198,6 @@ Targets (release / debug; measured values in [`ROADMAP.md`](ROADMAP.md#performan
 |----|-----|-------------|
 | Q1 | P0 | `--mm:orc` and `--mm:arc`, with and without `--threads:on`, zero warnings. |
 | Q2 | P1 | CI on Linux, macOS and Windows; Nim stable and devel. |
-| Q3 | P2 | JS backend for the core (no threads). |
 | Q4 | P0 | Public API fully documented (`##`) with `nim doc` published. |
 | Q5 | P0 | The library tests itself with properties (dogfooding), in addition to unit tests. |
 | Q6 | P1 | AddressSanitizer, UndefinedBehaviorSanitizer and leak checks in CI (closures held by generators must not leak under ARC). |

@@ -191,7 +191,7 @@ Three steps are enough to see which rule is off. Decide which side matches the s
 
 ## Limits
 
-- States that need a long, specific path (five reopenings of a breaker in a row, each after the right wait) are still rarely reached by random sequences. Write that path as a `replayCommands` regression test, or narrow the commands of a dedicated machine.
-- Commands run one after another on one thread. Parallel linearizability checks are planned after 1.0 (M7).
+- States that need a long, specific path (five reopenings of a breaker in a row, each after the right wait) are still rarely reached by random sequences. If the model can measure progress, give it a score with `target(float(model.reopenings), "reopenings")` in `invariant:`: after half of the cases, the engine extends the best sequence so far (on the breaker's backoff cap, 3 → 20 of 100 seeds; [ADR-0016](decisions/0016-targeted-exploration.md)). For a path you already know, write it as a `replayCommands` regression test, or narrow the commands of a dedicated machine.
+- Commands run one after another on one thread.
 - Argument values are printed with `showCode`, which produces Nim literals for built-in types. For a custom argument type, overload `showCode` so the printed block compiles.
 - `stateMachine` must be used at module level. The generated names (`BreakerSpec`, `BreakerSpecStep`, the command constructors) are exported, so a machine can live in its own module.

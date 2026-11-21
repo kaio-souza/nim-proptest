@@ -2,10 +2,13 @@
 
 All notable changes. Versions follow semantic versioning. Any change to the values generated for a given seed is listed under **Generation changes**, and happens only in a minor release ([stability policy](docs/STABILITY.md)).
 
-## Unreleased
+## v1.0.0 (2026-11-20)
 
-Everything since the last tag (v0.2.0). Work is grouped by theme, not by
-version: a release is cut when it is worth one, not per theme.
+First stable release: from here on, the API and the values generated for a
+seed follow the [stability policy](docs/STABILITY.md) (breaking changes only
+in a major release, generation changes only in a minor one). Contains
+everything since v0.2, grouped by theme; v0.3.0 changed only CI and
+documentation.
 
 ### Cases that never return
 
@@ -210,6 +213,11 @@ a bug that needs a command to stay away from 3 to 97, with no row worse.
 - The exploration distribution changed (edge share, collection edges, hint
   and swarm choices): values generated for a given seed differ from v0.2.
   The golden test was updated with this entry.
+
+## v0.3.0 (2026-11-20)
+
+No library changes: the test container and sanitizer jobs in CI (one suite per
+job, with timeouts), and documentation updates.
 
 ## v0.2 (2026-11-20)
 

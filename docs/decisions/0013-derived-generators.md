@@ -8,7 +8,7 @@
 
 Most Nim data are `object`s. Until v0.3, `forAll(m in Money)` required a hand-written `arbitrary` for every type: the main reason a new user could not just try the library. The same holds for case objects, `distinct` types, `ref` objects, recursive types (trees, ASTs) and the standard containers (`Table`, `HashSet`).
 
-Constraints: no closure on the type-inferred path (ADR-0007); a smaller choice must give a simpler value (ADR-0001); v0.4 must not change the values of existing generators for a given seed (stability, ROADMAP); most test types do not export their fields.
+Constraints: no closure on the type-inferred path (ADR-0007); a smaller choice must give a simpler value (ADR-0001); v0.4 must not change the values of existing generators for a given seed (stability); most test types do not export their fields.
 
 ## Decision
 

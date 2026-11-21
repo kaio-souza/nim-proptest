@@ -136,7 +136,7 @@ Raise it when a bug needs long inputs (a buffer that fills at 256 elements); low
 | `shrinkTimeBudget` | 0 (none) | | >= 0 ms |
 | `maxFailures` | 3 | | >= 1 |
 
-**`maxShrinks`**: property executions spent shrinking each failure. The library's reference bugs shrink to their exact minimum in 9 to 214 executions, so 2000 is generous; the budget matters when one execution is slow. 0 reports the first failing case as found, unshrunk.
+**`maxShrinks`**: property executions spent shrinking each failure. The library's reference bugs shrink to their exact minimum in 9 to 236 executions, so 2000 is generous; the budget matters when one execution is slow. 0 reports the first failing case as found, unshrunk.
 
 **`shrinkTimeBudget`**: a time cap per failure, for slow properties. When it hits, the report says "Shrinking stopped at its time budget" and shows the smallest counterexample so far: valid, maybe not minimal.
 

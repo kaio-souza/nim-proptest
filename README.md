@@ -1,8 +1,10 @@
+**Languages:** English · [Português (BR)](docs/i18n/pt-BR/README.md) · [Español](docs/i18n/es/README.md) · [中文](docs/i18n/zh-CN/README.md)
+
 # proptest
 
 A **property-based testing library for the [Nim](https://nim-lang.org) programming language**, distributed as a Nimble package. State a rule, let the library generate the inputs, and get the **smallest** input that breaks it.
 
-> **Status: usable, not yet in the Nimble index.** Properties over built-in types and **your own objects with no generator code**, and stateful (model-based) tests, work today, with automatic shrinking, failures that are replayed first on the next run, coverage statistics and boundary-seeking exploration. The API may still change before 1.0. See [what works today](#what-works-today) and the [roadmap](docs/ROADMAP.md).
+> Properties over built-in types and **your own objects with no generator code**, and stateful (model-based) tests, work today, with automatic shrinking, failures that are replayed first on the next run, coverage statistics and boundary-seeking exploration. Version 1.0: the API and the values generated for a seed follow the [stability policy](docs/STABILITY.md). See the [features](#features).
 
 ## Installation
 
@@ -33,7 +35,7 @@ The second property is wrong, and the report shows the **minimal** counterexampl
 ```
 [FAILED] custom generators shrink for free
   Property 'quickstart.nim:20' falsified at case 8 (50 cases passed, 0 discarded).
-  Counterexample (1 choices, 45 shrink executions):
+  Counterexample (1 choices, 9 shrink executions):
     n = 100
   Error: [PropertyFailed] check failed: n < 100
       n was 100
@@ -96,6 +98,7 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 | `swarm` | true | Stateful tests: half of the sequences leave some commands out |
 | `verbosity` | `vNormal` | `vQuiet`, `vNormal`, `vVerbose` (every case, every statistic), `vDebug` (shrink steps) |
 | `suppress` | `{}` | Health checks to skip: `hcLargeData`, `hcFewDistinct`, `hcSlowGeneration` |
+| `hangTimeout` | 0 (off) | Watchdog: a case running longer (ms) is reported and saved, and the program exits with code 1 |
 | `report` | `PROPTEST_REPORT` | JSON Lines file each result is appended to; empty: none |
 | `seed` | random | Fixes the run seed |
 | `name` | `file:line` | Property name; derives its own seed |
@@ -110,10 +113,11 @@ forAll(initSettings(cases = 500, maxShrinks = 5_000), x in int8): ...
 | `PROPTEST_TIME_BUDGET` | Default `timeBudget` in ms |
 | `PROPTEST_VERBOSITY` | `quiet`, `normal`, `verbose` or `debug` |
 | `PROPTEST_REPORT` | Default `report`: a JSON Lines file for CI tools (below) |
+| `PROPTEST_HANG_TIMEOUT` | Default `hangTimeout` in ms (recommended in CI, e.g. 60000) |
 
 ### JSON report for CI
 
-`PROPTEST_REPORT=proptest-report.jsonl nimble test` appends one line of JSON per property to that file (it is created with its directory; several test programs can share it). Each line has `format` (1), `name`, `status` (`passed`, `failed`, `flaky`, `gaveUp`, `generatorError`, `insufficientCoverage`, or `hung` from the [watchdog](docs/TROUBLESHOOTING.md#the-test-hangs), whose line has fewer fields), `passed`, `seed` (a string: it does not fit a JSON number), `program`, `replay` (the command that replays the run), `casesPassed`, `discarded`, `firstFailureAt`, `durationMs`, `message`, `labeledCases`, `labels` (`name`, `kind`, `cases`, `events`, `required` for `cover`), `warnings`, and `failures`: `kind` and `location` (the failure signature), `message`, `source` (`explored`, `database`, `example`), `flaky`, `choices`, `shrinkExecutions`, `shrinkStopped`, `inputs` (`name`, `value`), `machine` and `steps` for state machines, `stackTrace`. Fields may be added; a field that changes meaning or goes away raises `format`.
+`PROPTEST_REPORT=proptest-report.jsonl nimble test` appends one line of JSON per property to that file (it is created with its directory; several test programs can share it). Each line has `format` (1), `name`, `status` (`passed`, `failed`, `flaky`, `gaveUp`, `generatorError`, `insufficientCoverage`, or `hung` from the [watchdog](docs/TROUBLESHOOTING.md#the-test-hangs), whose line has fewer fields), `passed`, `seed` (a string: it does not fit a JSON number), `program`, `replay` (the command that replays the run), `casesPassed`, `discarded`, `firstFailureAt`, `durationMs`, `message`, `labeledCases`, `labels` (`name`, `kind`, `cases`, `events`, `required` for `cover`), `targets` (`label`, `best`: the best `target` score per name), `warnings`, and `failures`: `kind` and `location` (the failure signature), `message`, `source` (`explored`, `database`, `example`), `flaky`, `choices`, `shrinkExecutions`, `shrinkStopped`, `inputs` (`name`, `value`), `machine` and `steps` for state machines, `stackTrace`. Fields may be added; a field that changes meaning or goes away raises `format`.
 
 ```sh
 jq -r 'select(.passed | not) | "\(.name): \(.status), \(.replay)"' proptest-report.jsonl
@@ -155,7 +159,7 @@ Objects, case objects, `distinct` and `ref` objects are derived field by field; 
 | `tables(k, v, ...)`, `hashSets(g, ...)` | containers of generated values | fewer, simpler entries |
 | `uniqueSeqs(g, ...)`, `sortedSeqs(g, ...)` | `seq` of distinct values, or in ascending order | shorter, simpler elements |
 | `sized(proc(n: int): Gen[T] = ...)`, `g.resize(n)` | a generator built from the current size, or with a fixed size | smaller sizes |
-| `alphanumeric`, `identifiers(maxLen)`, `unicodeStrings(minLen, maxLen)` | letters and digits, identifiers, valid UTF-8 over every plane | shorter, `a` |
+| `strings(alphanumeric, ...)`, `identifiers(maxLen)`, `unicodeStrings(minLen, maxLen)` | letters and digits (`alphanumeric` is an alphabet), identifiers, valid UTF-8 over every plane | shorter, `a` |
 | `frequency([(w, g), ...])` | one generator, chosen by weight | the first entry |
 | `recursive(base, extend, maxDepth)` | trees: each level is `base` or one level deeper | `base` |
 | `optionals(g)` | `Option` | `none` |
@@ -229,6 +233,21 @@ Something looks wrong (gave up, flaky, a warning, a seed that does not replay)? 
 | `psGeneratorError` | a generator raised: a bug in the generator, not in the code under test |
 | `psInsufficientCoverage` | every case passed, but a `cover` requirement was confidently missed |
 
+Reading the result in code (`forAllResult`, `stateMachineResult`, or `.propertyResult` of a `PropertyError`):
+
+```nim
+let r = forAllResult(xs in seq[int]):
+  check xs.reversed.reversed == xs
+if not r.passed:
+  echo formatReport(r)              # the same text report a failing test prints
+  for f in r.failures:              # one per distinct bug, already shrunk
+    echo f.message, " from ", f.source   # fsExplored, fsDatabase or fsExample
+    for (name, value) in f.inputs: echo name, " = ", value
+    for step in f.steps: echo step  # state machines: the failing sequence as Nim calls
+```
+
+`r.status` is one of the values above; `r.runSeed` replays the run; `r.casesRun`, `r.discarded`, `r.labels` and `r.warnings` hold the statistics and health checks the report prints. Each failure also has `choices` (its minimal choice sequence), `shrinkExecutions`, `shrinkStopped` (shrinking hit `shrinkTimeBudget`), `flaky` and `stackTrace`.
+
 Up to `maxFailures` **distinct** bugs (different exception type or location) are reported separately, each shrunk on its own; shrinking never turns one bug into another.
 
 **Reproducing**: every report prints `PROPTEST_SEED=<n>`; run the same binary with it to get the same cases and the same counterexample. The seed is also written to `.proptest/last-run` before the first case, so it survives a crash.
@@ -239,32 +258,31 @@ Up to `maxFailures` **distinct** bugs (different exception type or location) are
 forAll(x in int, s in string, example(0, ""), example(-1, "a")): ...
 ```
 
-## What works today
+## Features
 
-| Feature | Status |
-|---|---|
-| `forAll` / `forAllResult` with types and generator values | ✅ |
-| Built-in type generators, combinators, custom `arbitrary` and `newGen` | ✅ |
-| Integrated shrinking, multiple distinct failures, flaky detection | ✅ |
-| `check`/`require` rewriting, `assume`, settings, environment variables | ✅ |
-| `std/unittest` and `unittest2` integration; standalone use | ✅ |
-| JSON report for CI tools (`PROPTEST_REPORT`) | ✅ |
-| Seed replay and crash breadcrumbs | ✅ (Linux, macOS and Windows in CI; JS pending) |
-| Stateful / model-based testing: `stateMachine`, shortest failing sequence printed as `replayCommands` code | ✅ |
-| Generators derived for objects, case objects, `distinct`, `ref` and recursive types; `Table`, `HashSet`; `frequency`, `recursive`; Unicode strings | ✅ |
-| Failure database (past failures replayed first), explicit `example(...)` | ✅ |
-| `classify` / `cover` / `label`, stateful statistics, verbosity levels | ✅ |
-| Edge-case bias, boundary hints (`near`, mined constants), swarm testing | ✅ |
-| Per-case deadline, time budgets for runs and shrinking, health checks | ✅ |
-| Configuration reference and troubleshooting guide, checked against the code in CI | ✅ |
-| Stability policy: a seed replays across patch releases, checked by a golden snapshot ([STABILITY.md](docs/STABILITY.md)) | ✅ |
-| `sized`, `resize`, `uniqueSeqs`, `sortedSeqs`, targeted exploration (`target`), faster generation | ✅ |
-| Watchdog (opt-in, `PROPTEST_HANG_TIMEOUT`): a case that never returns is reported (inputs, choices, replay) and saved, instead of hanging the run | ✅ (needs `--threads:on`, Nim's default) |
+- `forAll` / `forAllResult` with types and generator values
+- Built-in type generators, combinators, custom `arbitrary` and `newGen`
+- Integrated shrinking, multiple distinct failures, flaky detection
+- `check`/`require` rewriting, `assume`, settings, environment variables
+- `std/unittest` and `unittest2` integration; standalone use
+- JSON report for CI tools (`PROPTEST_REPORT`)
+- Seed replay and crash breadcrumbs (Linux, macOS and Windows in CI)
+- Stateful / model-based testing: `stateMachine`, shortest failing sequence printed as `replayCommands` code
+- Generators derived for objects, case objects, `distinct`, `ref` and recursive types; `Table`, `HashSet`; `frequency`, `recursive`; Unicode strings
+- Failure database (past failures replayed first), explicit `example(...)`
+- `classify` / `cover` / `label`, stateful statistics, verbosity levels
+- Edge-case bias, boundary hints (`near`, mined constants), swarm testing
+- Per-case deadline, time budgets for runs and shrinking, health checks
+- Configuration reference and troubleshooting guide, checked against the code in CI
+- Stability policy: a seed replays across patch releases, checked by a golden snapshot ([STABILITY.md](docs/STABILITY.md))
+- `sized`, `resize`, `uniqueSeqs`, `sortedSeqs`, targeted exploration (`target`)
+- Watchdog (opt-in, `PROPTEST_HANG_TIMEOUT`): a case that never returns is reported (inputs, choices, replay) and saved, instead of hanging the run (needs `--threads:on`, Nim's default)
 
 ## Known limitations
 
 - **A case that never returns hangs the run, unless the watchdog is on**: with `PROPTEST_HANG_TIMEOUT=60000` (recommended in CI; off by default) it is reported and saved after that long, then the program exits with code 1, because a running case cannot be interrupted safely. It cannot be shrunk, and its inputs are printed on the next run (or at once with `PROPTEST_VERBOSITY=verbose`). Without `--threads:on` there is no watchdog.
 - **Deep states are still hard**: a state that needs a long, specific path (five reopenings of a breaker in a row, each after the right wait) is seldom reached by random sequences. `target(score)` helps when the property can measure progress (3 → 20 of 100 seeds for the breaker); for a path you already know, write it as a `replayCommands` test.
+- **Release builds locate only `check` failures**: without `--stackTrace:on --lineTrace:on` (`-d:release`, `-d:danger`), other exceptions are told apart by type only, so two bugs that raise the same type are reported as one. A compile-time warning says so; see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#two-bugs-reported-as-one-or-location-unknown).
 - **`--panics:on`**: `Defect`s end the process at the first failing case, so it cannot be shrunk (a compile-time warning says so).
 - A broad `except CatchableError` inside the property body also catches the library's internal signals (`assume`, failed `check`); re-raise them or catch narrower types.
 - The values generated for a seed change only in minor releases, always listed in the [CHANGELOG](CHANGELOG.md) ([stability policy](docs/STABILITY.md)), so an old seed may not replay after a minor upgrade.
@@ -302,7 +320,7 @@ test "queue matches its model":
 With a queue whose `pop` is wrong after exactly 3 pushes and 1 pop:
 
 ```
-  Shortest failing sequence (4 steps, 12 choices, 115 shrink executions):
+  Shortest failing sequence (4 steps, 10 choices, 150 shrink executions):
     replayCommands BoundedQueue:
       push(0)
       push(0)
@@ -318,10 +336,10 @@ Time is a command (`command advance(ms in ints(0, 2000))` moving a fake clock), 
 
 ## Quality
 
-- 136 tests, passing on `orc`/`arc` × threads on/off × debug/release; ASan, UBSan and leak checks clean.
+- 158 tests, passing on `orc`/`arc` × threads on/off × debug/release; ASan, UBSan and leak checks clean.
 - The PRNG and hash match the authors' reference C implementations and the official FNV-1a vectors (golden tests).
 - Value tests: each reference bug of the [SPEC](docs/SPEC.md) shrinks to its exact minimal counterexample; two independent bugs are both reported, and shrinking never slips from one bug to another (checked on 20 seeds).
-- Deterministic gates in CI: shrinking each reference bug takes 9 to 214 executions (baseline in `benchmarks/baseline/shrink.json`); planted bugs must keep being found on as many seeds as the baseline (`benchmarks/baseline/find.json`); drawing choices and running stateful steps never allocate, and a test checks the same for static labels.
+- Deterministic gates in CI: shrinking each reference bug takes 9 to 236 executions (baseline in `benchmarks/baseline/shrink.json`); planted bugs must keep being found on as many seeds as the baseline (`benchmarks/baseline/find.json`); drawing choices and running stateful steps never allocate, and a test checks the same for static labels.
 - First external user: the [`nim-circuit-breaker`](https://github.com/kaio-souza/nim-circuit-breaker) model test runs 1000 random sequences against its breaker.
 - Every requirement has a row in [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md), checked by `nimble trace`. Design decisions: [`docs/decisions/`](docs/decisions/README.md).
 
